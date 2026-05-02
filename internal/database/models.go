@@ -64,13 +64,13 @@ type Product struct {
 	Name                 string     `gorm:"type:varchar(200);not null" json:"name"`
 	Slug                 string     `gorm:"type:varchar(220);not null;uniqueIndex" json:"slug"`
 	Description          string     `gorm:"type:text" json:"description"`
-	PriceAmount          int64      `gorm:"not null" json:"price_amount"`
-	CompareAtPriceAmount *int64     `gorm:"default:null" json:"compare_at_price_amount"`
+	PriceAmount          int64      `gorm:"not null;check:price_amount >= 0" json:"price_amount"`
+	CompareAtPriceAmount *int64     `gorm:"default:null;check:compare_at_price_amount IS NULL OR compare_at_price_amount > price_amount" json:"compare_at_price_amount"`
 	DiscountStartAt      *time.Time `json:"discount_start_at"`
 	DiscountEndAt        *time.Time `json:"discount_end_at"`
 	IsDiscountActive     bool       `gorm:"not null;default:false" json:"is_discount_active"`
 	Stock                int        `gorm:"not null;default:0" json:"stock"`
-	IsActive             bool       `gorm:"not null;default:false" json:"is_active"`
+	IsActive             bool       `gorm:"not null;default:false;index" json:"is_active"`
 }
 
 type ProductImage struct {
@@ -94,8 +94,8 @@ type CartItem struct {
 	ID                  uuid.UUID `gorm:"type:uuid;default:gen_random_uuid();primaryKey" json:"id"`
 	CartID              uuid.UUID `gorm:"type:uuid;not null;index" json:"cart_id"`
 	ProductID           uuid.UUID `gorm:"type:uuid;not null;index" json:"product_id"`
-	Quantity            int       `gorm:"not null" json:"quantity"`
-	PriceSnapshotAmount int64     `gorm:"not null" json:"price_snapshot_amount"`
+	Quantity            int       `gorm:"not null;check:quantity > 0" json:"quantity"`
+	PriceSnapshotAmount int64     `gorm:"not null;check:price_snapshot_amount >= 0" json:"price_snapshot_amount"`
 	CreatedAt           time.Time `json:"created_at"`
 	UpdatedAt           time.Time `json:"updated_at"`
 }
@@ -104,8 +104,8 @@ type Order struct {
 	ID            uuid.UUID `gorm:"type:uuid;default:gen_random_uuid();primaryKey" json:"id"`
 	CustomerID    uuid.UUID `gorm:"type:uuid;not null;index" json:"customer_id"`
 	OrderNumber   string    `gorm:"type:varchar(80);not null;uniqueIndex" json:"order_number"`
-	TotalAmount   int64     `gorm:"not null" json:"total_amount"`
-	Status        string    `gorm:"type:varchar(50);not null;default:'PENDING_PAYMENT'" json:"status"`
+	TotalAmount   int64     `gorm:"not null;check:total_amount >= 0" json:"total_amount"`
+	Status        string    `gorm:"type:varchar(50);not null;default:'PENDING_PAYMENT';index;check:status IN ('PENDING_PAYMENT','PAID','PROCESSING','READY_TO_SHIP','SHIPPED','COMPLETED','CANCELLED','EXPIRED','FAILED')" json:"status"`
 	StockRestored bool      `gorm:"not null;default:false" json:"stock_restored"`
 	CreatedAt     time.Time `json:"created_at"`
 	UpdatedAt     time.Time `json:"updated_at"`
@@ -116,9 +116,9 @@ type OrderItem struct {
 	OrderID             uuid.UUID `gorm:"type:uuid;not null;index" json:"order_id"`
 	ProductID           uuid.UUID `gorm:"type:uuid;not null;index" json:"product_id"`
 	ProductNameSnapshot string    `gorm:"type:varchar(200);not null" json:"product_name_snapshot"`
-	Quantity            int       `gorm:"not null" json:"quantity"`
-	PriceAmount         int64     `gorm:"not null" json:"price_amount"`
-	SubtotalAmount      int64     `gorm:"not null" json:"subtotal_amount"`
+	Quantity            int       `gorm:"not null;check:quantity > 0" json:"quantity"`
+	PriceAmount         int64     `gorm:"not null;check:price_amount >= 0" json:"price_amount"`
+	SubtotalAmount      int64     `gorm:"not null;check:subtotal_amount >= 0" json:"subtotal_amount"`
 	CreatedAt           time.Time `json:"created_at"`
 	UpdatedAt           time.Time `json:"updated_at"`
 }
@@ -126,11 +126,11 @@ type OrderItem struct {
 type Payment struct {
 	ID                uuid.UUID      `gorm:"type:uuid;default:gen_random_uuid();primaryKey" json:"id"`
 	OrderID           uuid.UUID      `gorm:"type:uuid;not null;index" json:"order_id"`
-	Provider          string         `gorm:"type:varchar(50);not null;index" json:"provider"`
-	ProviderReference string         `gorm:"type:varchar(255);index" json:"provider_reference"`
+	Provider          string         `gorm:"type:varchar(50);not null;index:idx_payments_provider_provider_reference,priority:1" json:"provider"`
+	ProviderReference string         `gorm:"type:varchar(255);index:idx_payments_provider_provider_reference,priority:2" json:"provider_reference"`
 	PaymentMethod     string         `gorm:"type:varchar(100)" json:"payment_method"`
-	Amount            int64          `gorm:"not null" json:"amount"`
-	Status            string         `gorm:"type:varchar(50);not null;default:'PENDING'" json:"status"`
+	Amount            int64          `gorm:"not null;check:amount >= 0" json:"amount"`
+	Status            string         `gorm:"type:varchar(50);not null;default:'PENDING';check:status IN ('PENDING','PAID','EXPIRED','FAILED','CANCELLED','REFUNDED')" json:"status"`
 	RedirectURL       string         `gorm:"type:text" json:"redirect_url"`
 	PaidAt            *time.Time     `json:"paid_at"`
 	RawPayload        datatypes.JSON `gorm:"type:jsonb" json:"raw_payload"`
@@ -140,9 +140,9 @@ type Payment struct {
 
 type PaymentWebhookEvent struct {
 	ID                uuid.UUID      `gorm:"type:uuid;default:gen_random_uuid();primaryKey" json:"id"`
-	Provider          string         `gorm:"type:varchar(50);not null" json:"provider"`
-	EventID           string         `gorm:"type:varchar(255);not null" json:"event_id"`
-	ProviderReference string         `gorm:"type:varchar(255);index" json:"provider_reference"`
+	Provider          string         `gorm:"type:varchar(50);not null;uniqueIndex:uq_payment_webhook_events_provider_event_id,priority:1" json:"provider"`
+	EventID           string         `gorm:"type:varchar(255);not null;uniqueIndex:uq_payment_webhook_events_provider_event_id,priority:2" json:"event_id"`
+	ProviderReference string         `gorm:"type:varchar(255);index:idx_payments_provider_provider_reference,priority:2" json:"provider_reference"`
 	Status            string         `gorm:"type:varchar(50);not null" json:"status"`
 	RawPayload        datatypes.JSON `gorm:"type:jsonb" json:"raw_payload"`
 	ProcessedAt       *time.Time     `json:"processed_at"`
