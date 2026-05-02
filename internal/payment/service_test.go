@@ -2,6 +2,7 @@ package payment
 
 import (
 	"context"
+	"sync"
 	"testing"
 
 	"go-be-mono-commerce/internal/config"
@@ -117,12 +118,103 @@ func TestWebhookPaidAndNoDowngrade(t *testing.T) {
 }
 
 func TestApplyWebhookStatus_Idempotent(t *testing.T) {
-	status, changed := applyWebhookStatus(StatusPending, StatusPaid)
+	status, changed := applyWebhookStatus(StatusPending, StatusPaid, "PENDING_PAYMENT")
 	if !changed || status != StatusPaid {
 		t.Fatal("expected paid")
 	}
-	status, changed = applyWebhookStatus(status, StatusFailed)
+	status, changed = applyWebhookStatus(status, StatusFailed, "PAID")
 	if changed || status != StatusPaid {
 		t.Fatal("must not downgrade paid")
+	}
+}
+
+func TestWebhookDuplicatePaidSequential(t *testing.T) {
+	db := setupDB(t)
+	ord := database.Order{OrderNumber: "ORD-SEQ", TotalAmount: 1000, Status: "PENDING_PAYMENT"}
+	db.Create(&ord)
+	pay := database.Payment{OrderID: ord.ID, Provider: "xendit", ProviderReference: ord.OrderNumber, Amount: 1000, Status: StatusPending}
+	db.Create(&pay)
+	svc, _ := NewService(db, mkCfg("xendit"))
+	payload := []byte(`{"id":"evt-seq-1","external_id":"ORD-SEQ","status":"PAID"}`)
+	for range 2 {
+		if err := svc.HandleWebhook(context.Background(), "xendit", map[string]string{"X-Callback-Token": "token"}, payload); err != nil {
+			t.Fatal(err)
+		}
+	}
+	var cnt int64
+	db.Model(&database.PaymentWebhookEvent{}).Where("provider = ? AND event_id = ?", "xendit", "evt-seq-1").Count(&cnt)
+	if cnt != 1 {
+		t.Fatalf("expected single webhook event row, got %d", cnt)
+	}
+}
+
+func TestWebhookDuplicatePaidConcurrent(t *testing.T) {
+	db := setupDB(t)
+	ord := database.Order{OrderNumber: "ORD-CON", TotalAmount: 1000, Status: "PENDING_PAYMENT"}
+	db.Create(&ord)
+	pay := database.Payment{OrderID: ord.ID, Provider: "xendit", ProviderReference: ord.OrderNumber, Amount: 1000, Status: StatusPending}
+	db.Create(&pay)
+	svc, _ := NewService(db, mkCfg("xendit"))
+	payload := []byte(`{"id":"evt-con-1","external_id":"ORD-CON","status":"PAID"}`)
+	var wg sync.WaitGroup
+	errs := make(chan error, 8)
+	for range 8 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			errs <- svc.HandleWebhook(context.Background(), "xendit", map[string]string{"X-Callback-Token": "token"}, payload)
+		}()
+	}
+	wg.Wait()
+	close(errs)
+	for err := range errs {
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	var cnt int64
+	db.Model(&database.PaymentWebhookEvent{}).Where("provider = ? AND event_id = ?", "xendit", "evt-con-1").Count(&cnt)
+	if cnt != 1 {
+		t.Fatalf("expected single event row, got %d", cnt)
+	}
+}
+
+func TestWebhookPaidThenExpiredLateNoDowngrade(t *testing.T) {
+	db := setupDB(t)
+	ord := database.Order{OrderNumber: "ORD-LATE", TotalAmount: 1000, Status: "PENDING_PAYMENT"}
+	db.Create(&ord)
+	pay := database.Payment{OrderID: ord.ID, Provider: "xendit", ProviderReference: ord.OrderNumber, Amount: 1000, Status: StatusPending}
+	db.Create(&pay)
+	svc, _ := NewService(db, mkCfg("xendit"))
+	if err := svc.HandleWebhook(context.Background(), "xendit", map[string]string{"X-Callback-Token": "token"}, []byte(`{"id":"evt-late-1","external_id":"ORD-LATE","status":"PAID"}`)); err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.HandleWebhook(context.Background(), "xendit", map[string]string{"X-Callback-Token": "token"}, []byte(`{"id":"evt-late-2","external_id":"ORD-LATE","status":"EXPIRED"}`)); err != nil {
+		t.Fatal(err)
+	}
+	var updated database.Payment
+	db.First(&updated, "id = ?", pay.ID)
+	if updated.Status != StatusPaid {
+		t.Fatalf("expected paid to be terminal, got %s", updated.Status)
+	}
+}
+
+func TestWebhookFailedThenPaidAllowed(t *testing.T) {
+	db := setupDB(t)
+	ord := database.Order{OrderNumber: "ORD-FP", TotalAmount: 1000, Status: "PENDING_PAYMENT"}
+	db.Create(&ord)
+	pay := database.Payment{OrderID: ord.ID, Provider: "xendit", ProviderReference: ord.OrderNumber, Amount: 1000, Status: StatusPending}
+	db.Create(&pay)
+	svc, _ := NewService(db, mkCfg("xendit"))
+	if err := svc.HandleWebhook(context.Background(), "xendit", map[string]string{"X-Callback-Token": "token"}, []byte(`{"id":"evt-fp-1","external_id":"ORD-FP","status":"FAILED"}`)); err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.HandleWebhook(context.Background(), "xendit", map[string]string{"X-Callback-Token": "token"}, []byte(`{"id":"evt-fp-2","external_id":"ORD-FP","status":"PAID"}`)); err != nil {
+		t.Fatal(err)
+	}
+	var updated database.Payment
+	db.First(&updated, "id = ?", pay.ID)
+	if updated.Status != StatusPaid {
+		t.Fatalf("expected transition FAILED -> PAID when order not cancelled, got %s", updated.Status)
 	}
 }
