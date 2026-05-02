@@ -7,6 +7,7 @@ type Config struct {
 	HTTPPort        string
 	DBDSN           string
 	JWTSecret       string
+	JWTTTLHours     string
 	PaymentProvider string
 	CorsAllowOrigin string
 	SeedAdminEmail  string
@@ -26,6 +27,7 @@ func Load() Config {
 		HTTPPort:        getEnv("HTTP_PORT", "8080"),
 		DBDSN:           getEnv("DB_DSN", "host=localhost user=postgres password=postgres dbname=ecommerce port=5432 sslmode=disable"),
 		JWTSecret:       getEnv("JWT_SECRET", "change-me"),
+		JWTTTLHours:     getEnv("JWT_TTL_HOURS", "24"),
 		PaymentProvider: getEnv("PAYMENT_PROVIDER", "midtrans"),
 		CorsAllowOrigin: getEnv("CORS_ALLOW_ORIGIN", "*"),
 		SeedAdminEmail:  getEnv("SEED_ADMIN_EMAIL", "admin@example.com"),

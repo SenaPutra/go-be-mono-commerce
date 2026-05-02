@@ -28,9 +28,9 @@ The admin seed inserts a default super admin account:
 Base URL: `http://localhost:8080/api/v1`
 
 ### Example curl
-- Register customer: `curl -X POST localhost:8080/api/v1/auth/customer/register -H 'Content-Type: application/json' -d '{}'`
-- Login customer: `curl -X POST localhost:8080/api/v1/auth/customer/login -H 'Content-Type: application/json' -d '{}'`
-- Login admin: `curl -X POST localhost:8080/api/v1/auth/admin/login -H 'Content-Type: application/json' -d '{}'`
+- Register customer: `curl -X POST localhost:8080/api/v1/auth/customer/register -H 'Content-Type: application/json' -d '{"name":"Sena","email":"sena@example.com","phone":"08123456789","password":"secret123"}'`
+- Login customer: `curl -X POST localhost:8080/api/v1/auth/customer/login -H 'Content-Type: application/json' -d '{"email":"sena@example.com","password":"secret123"}'`
+- Login admin: `curl -X POST localhost:8080/api/v1/auth/admin/login -H 'Content-Type: application/json' -d '{"email":"admin@example.com","password":"admin12345"}'`
 - Create product: `curl -X POST localhost:8080/api/v1/admin/products -H 'Authorization: Bearer <admin_token>'`
 - Add to cart: `curl -X POST localhost:8080/api/v1/cart/items -H 'Authorization: Bearer <customer_token>'`
 - Checkout: `curl -X POST localhost:8080/api/v1/orders/checkout -H 'Authorization: Bearer <customer_token>'`
@@ -40,3 +40,5 @@ Base URL: `http://localhost:8080/api/v1`
 ## Notes
 - Payment providers are abstractions with Midtrans/Xendit skeleton implementations.
 - Replace TODO placeholders with real gateway calls and signature validation.
+
+- Auth me: `curl -X GET localhost:8080/api/v1/auth/me -H 'Authorization: Bearer <token>'`
