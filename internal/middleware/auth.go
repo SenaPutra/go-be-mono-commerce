@@ -8,11 +8,7 @@ import (
 	"go-be-mono-commerce/pkg/response"
 )
 
-func JWT(secret string, allowedRoles ...string) gin.HandlerFunc {
-	roleAllowed := map[string]bool{}
-	for _, r := range allowedRoles {
-		roleAllowed[r] = true
-	}
+func AuthJWT(secret string) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		h := c.GetHeader("Authorization")
 		if !strings.HasPrefix(h, "Bearer ") {
@@ -26,13 +22,34 @@ func JWT(secret string, allowedRoles ...string) gin.HandlerFunc {
 			c.Abort()
 			return
 		}
-		if len(roleAllowed) > 0 && !roleAllowed[claims.Role] {
+		c.Set("user_id", claims.UserID)
+		c.Set("role", claims.Role)
+		c.Next()
+	}
+}
+
+func RequireRoles(allowedRoles ...string) gin.HandlerFunc {
+	roleAllowed := map[string]bool{}
+	for _, r := range allowedRoles {
+		roleAllowed[r] = true
+	}
+	return func(c *gin.Context) {
+		roleVal, ok := c.Get("role")
+		if !ok || !roleAllowed[roleVal.(string)] {
 			response.Fail(c, 403, "Forbidden", "FORBIDDEN", nil)
 			c.Abort()
 			return
 		}
-		c.Set("user_id", claims.UserID)
-		c.Set("role", claims.Role)
 		c.Next()
+	}
+}
+
+func JWT(secret string, allowedRoles ...string) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		AuthJWT(secret)(c)
+		if c.IsAborted() {
+			return
+		}
+		RequireRoles(allowedRoles...)(c)
 	}
 }

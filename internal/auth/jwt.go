@@ -1,6 +1,7 @@
 package auth
 
 import (
+	"errors"
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
@@ -13,13 +14,25 @@ type Claims struct {
 }
 
 func Sign(secret, userID, role string) (string, error) {
-	claims := Claims{UserID: userID, Role: role, RegisteredClaims: jwt.RegisteredClaims{ExpiresAt: jwt.NewNumericDate(time.Now().Add(24 * time.Hour))}}
+	return SignWithTTL(secret, userID, role, 24*time.Hour)
+}
+
+func SignWithTTL(secret, userID, role string, ttl time.Duration) (string, error) {
+	claims := Claims{UserID: userID, Role: role, RegisteredClaims: jwt.RegisteredClaims{ExpiresAt: jwt.NewNumericDate(time.Now().Add(ttl)), IssuedAt: jwt.NewNumericDate(time.Now())}}
 	t := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
 	return t.SignedString([]byte(secret))
 }
 
 func Parse(secret, token string) (*Claims, error) {
 	c := &Claims{}
-	_, err := jwt.ParseWithClaims(token, c, func(t *jwt.Token) (interface{}, error) { return []byte(secret), nil })
-	return c, err
+	t, err := jwt.ParseWithClaims(token, c, func(t *jwt.Token) (interface{}, error) {
+		if _, ok := t.Method.(*jwt.SigningMethodHMAC); !ok {
+			return nil, errors.New("unexpected signing method")
+		}
+		return []byte(secret), nil
+	})
+	if err != nil || !t.Valid {
+		return nil, errors.New("invalid token")
+	}
+	return c, nil
 }
