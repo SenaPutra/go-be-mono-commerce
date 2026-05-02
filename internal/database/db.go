@@ -11,5 +11,5 @@ func New(cfg config.Config) (*gorm.DB, error) {
 	if err != nil {
 		return nil, err
 	}
-	return db, db.AutoMigrate(&Customer{}, &CustomerAddress{}, &AdminUser{}, &Category{}, &Product{}, &ProductImage{}, &Cart{}, &CartItem{}, &Order{}, &OrderItem{}, &Payment{}, &AuditLog{})
+	return db, db.AutoMigrate(&Customer{}, &CustomerAddress{}, &AdminUser{}, &Category{}, &Product{}, &ProductImage{}, &Cart{}, &CartItem{}, &Order{}, &OrderItem{}, &Payment{}, &PaymentWebhookEvent{}, &AuditLog{})
 }
