@@ -13,6 +13,17 @@ Go 1.22+, Gin, GORM, PostgreSQL, JWT, bcrypt, Zap.
 ## Migrations
 SQL files are in `migrations/` (intended for golang-migrate/goose integration).
 
+Run in order on an empty PostgreSQL database:
+1. `000001_init.up.sql`
+2. `000003_ecommerce_schema.up.sql`
+3. `000002_seed_admin.up.sql`
+
+The admin seed inserts a default super admin account:
+- Email: `admin@example.com`
+- Password: `admin12345`
+- Role: `SUPER_ADMIN`
+- Password storage uses PostgreSQL `pgcrypto` bcrypt hash via `crypt(..., gen_salt('bf'))`.
+
 ## API
 Base URL: `http://localhost:8080/api/v1`
 
