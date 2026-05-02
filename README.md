@@ -481,3 +481,47 @@ Optional verbose run:
 ```bash
 go test -v ./...
 ```
+
+---
+
+## 15) Database Defensive Constraints (Integrity Guardrails)
+
+The database enforces additional **CHECK constraints** and **indexes** to prevent invalid commerce data, even if application-level validation is bypassed.
+
+### Enforced checks
+- `products`
+  - `stock >= 0`
+  - `price_amount >= 0`
+  - `compare_at_price_amount IS NULL OR compare_at_price_amount > price_amount`
+- `cart_items`
+  - `quantity > 0`
+  - `price_snapshot_amount >= 0`
+- `order_items`
+  - `quantity > 0`
+  - `price_amount >= 0`
+  - `subtotal_amount >= 0`
+- `orders`
+  - `total_amount >= 0`
+  - status is restricted to:
+    `PENDING_PAYMENT, PAID, PROCESSING, READY_TO_SHIP, SHIPPED, COMPLETED, CANCELLED, EXPIRED, FAILED`
+- `payments`
+  - `amount >= 0`
+  - status is restricted to:
+    `PENDING, PAID, EXPIRED, FAILED, CANCELLED, REFUNDED`
+
+### Added indexes
+- `products(is_active)`
+- `products(category_id)`
+- `orders(customer_id)`
+- `orders(status)`
+- `payments(order_id)`
+- `payments(provider, provider_reference)`
+- `cart_items(cart_id, product_id)`
+- unique `payment_webhook_events(provider, event_id)`
+
+### Migration file
+Apply:
+- `migrations/000007_commerce_integrity_constraints.up.sql`
+
+Rollback:
+- `migrations/000007_commerce_integrity_constraints.down.sql`
