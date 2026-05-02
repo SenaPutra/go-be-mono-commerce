@@ -117,18 +117,23 @@ func (s *paymentService) HandleWebhook(ctx context.Context, provider string, hea
 
 	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		event := database.PaymentWebhookEvent{Provider: strings.ToLower(provider), EventID: evt.EventID, ProviderReference: evt.ProviderReference, Status: evt.Status, RawPayload: datatypes.JSON(payload)}
-		if err := tx.Where("provider = ? AND event_id = ?", event.Provider, event.EventID).FirstOrCreate(&event).Error; err != nil {
+		if err := tx.Create(&event).Error; err != nil {
+			if isUniqueViolation(err) {
+				return s.writeAudit(tx, "PAYMENT_WEBHOOK_DUPLICATE", provider, evt, headers, payload)
+			}
 			return err
-		}
-		if event.ProcessedAt != nil {
-			return s.writeAudit(tx, "PAYMENT_WEBHOOK_DUPLICATE", provider, evt, headers, payload)
 		}
 
 		var pay database.Payment
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&pay, "provider = ? AND provider_reference = ?", strings.ToLower(provider), evt.ProviderReference).Error; err != nil {
 			return err
 		}
-		nextStatus, changed := applyWebhookStatus(pay.Status, evt.Status)
+		var ord database.Order
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&ord, "id = ?", pay.OrderID).Error; err != nil {
+			return err
+		}
+
+		nextStatus, changed := applyWebhookStatus(pay.Status, evt.Status, ord.Status)
 		if changed {
 			updates := map[string]any{"status": nextStatus}
 			if nextStatus == StatusPaid && pay.PaidAt == nil {
@@ -138,14 +143,21 @@ func (s *paymentService) HandleWebhook(ctx context.Context, provider string, hea
 				return err
 			}
 			if nextStatus == StatusPaid || nextStatus == StatusExpired || nextStatus == StatusFailed {
-				var ord database.Order
-				if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&ord, "id = ?", pay.OrderID).Error; err != nil {
-					return err
-				}
 				if err := restoreOrderStockIfNeeded(tx, &ord, nextStatus); err != nil {
 					return err
 				}
-				if err := tx.Model(&ord).Updates(map[string]any{"status": nextStatus, "stock_restored": ord.StockRestored}).Error; err != nil {
+				nextOrderStatus, updateOrder := applyOrderTransition(ord.Status, nextStatus)
+				if updateOrder {
+					if err := tx.Model(&ord).Updates(map[string]any{"status": nextOrderStatus, "stock_restored": ord.StockRestored}).Error; err != nil {
+						return err
+					}
+				} else if ord.StockRestored {
+					if err := tx.Model(&ord).Update("stock_restored", ord.StockRestored).Error; err != nil {
+						return err
+					}
+				}
+			} else if ord.StockRestored {
+				if err := tx.Model(&ord).Update("stock_restored", ord.StockRestored).Error; err != nil {
 					return err
 				}
 			}
@@ -176,7 +188,10 @@ func providerName(p PaymentProvider) string {
 	}
 }
 
-func applyWebhookStatus(current, incoming string) (string, bool) {
+func applyWebhookStatus(current, incoming, orderStatus string) (string, bool) {
+	if strings.EqualFold(orderStatus, "CANCELLED") && incoming == StatusPaid {
+		return current, false
+	}
 	if current == StatusPaid && incoming != StatusPaid {
 		return current, false
 	}
@@ -184,6 +199,39 @@ func applyWebhookStatus(current, incoming string) (string, bool) {
 		return current, false
 	}
 	return incoming, true
+}
+
+func applyOrderTransition(orderStatus, paymentStatus string) (string, bool) {
+	if paymentStatus == StatusPaid {
+		if orderStatus == StatusPaid {
+			return orderStatus, false
+		}
+		if orderStatus == "CANCELLED" {
+			return orderStatus, false
+		}
+		return StatusPaid, true
+	}
+	if paymentStatus == StatusExpired || paymentStatus == StatusFailed || paymentStatus == StatusCancelled {
+		if isPaidOrBeyond(orderStatus) {
+			return orderStatus, false
+		}
+		return paymentStatus, orderStatus != paymentStatus
+	}
+	return orderStatus, false
+}
+
+func isPaidOrBeyond(orderStatus string) bool {
+	switch orderStatus {
+	case StatusPaid, "PROCESSING", "READY_TO_SHIP", "SHIPPED", "COMPLETED":
+		return true
+	default:
+		return false
+	}
+}
+
+func isUniqueViolation(err error) bool {
+	msg := strings.ToLower(err.Error())
+	return strings.Contains(msg, "duplicate key") || strings.Contains(msg, "unique constraint") || strings.Contains(msg, "unique failed")
 }
 
 func restoreOrderStockIfNeeded(tx *gorm.DB, order *database.Order, nextStatus string) error {
