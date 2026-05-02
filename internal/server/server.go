@@ -2,6 +2,7 @@ package server
 
 import (
 	"github.com/gin-gonic/gin"
+	"go-be-mono-commerce/internal/audit"
 	"go-be-mono-commerce/internal/auth"
 	"go-be-mono-commerce/internal/cart"
 	"go-be-mono-commerce/internal/category"
@@ -11,6 +12,7 @@ import (
 	"go-be-mono-commerce/internal/order"
 	"go-be-mono-commerce/internal/payment"
 	"go-be-mono-commerce/internal/product"
+	"go-be-mono-commerce/internal/report"
 	"go-be-mono-commerce/pkg/logger"
 	"go-be-mono-commerce/pkg/response"
 	"gorm.io/gorm"
@@ -413,11 +415,73 @@ func registerRoutes(v1 *gin.RouterGroup, cfg config.Config, db *gorm.DB) {
 		response.OK(c, out)
 	})
 	admin.POST("/uploads/images", ok)
-	admin.GET("/reports/orders", ok)
-	admin.GET("/reports/sales", ok)
-	admin.GET("/reports/products", ok)
-	admin.GET("/reports/payments", ok)
-	admin.GET("/audit-logs", ok)
+	reportSvc := report.NewService(db)
+	auditSvc := audit.NewService(db)
+	admin.GET("/reports/orders", func(c *gin.Context) {
+		f, err := report.ParseFilter(c.Query("date_from"), c.Query("date_to"), c.Query("page"), c.Query("limit"))
+		if err != nil {
+			response.Fail(c, 400, "Validation error", "VALIDATION_ERROR", []string{"invalid date format"})
+			return
+		}
+		out, err := reportSvc.OrderReport(f)
+		if err != nil {
+			response.Fail(c, 500, "Internal server error", "INTERNAL_ERROR", nil)
+			return
+		}
+		response.OK(c, out)
+	})
+	admin.GET("/reports/sales", func(c *gin.Context) {
+		f, err := report.ParseFilter(c.Query("date_from"), c.Query("date_to"), c.Query("page"), c.Query("limit"))
+		if err != nil {
+			response.Fail(c, 400, "Validation error", "VALIDATION_ERROR", []string{"invalid date format"})
+			return
+		}
+		out, err := reportSvc.SalesReport(f)
+		if err != nil {
+			response.Fail(c, 500, "Internal server error", "INTERNAL_ERROR", nil)
+			return
+		}
+		response.OK(c, out)
+	})
+	admin.GET("/reports/products", func(c *gin.Context) {
+		f, err := report.ParseFilter(c.Query("date_from"), c.Query("date_to"), c.Query("page"), c.Query("limit"))
+		if err != nil {
+			response.Fail(c, 400, "Validation error", "VALIDATION_ERROR", []string{"invalid date format"})
+			return
+		}
+		items, total, err := reportSvc.ProductSalesReport(f)
+		if err != nil {
+			response.Fail(c, 500, "Internal server error", "INTERNAL_ERROR", nil)
+			return
+		}
+		response.OK(c, gin.H{"items": items, "page": f.Page, "limit": f.Limit, "total": total})
+	})
+	admin.GET("/reports/payments", func(c *gin.Context) {
+		f, err := report.ParseFilter(c.Query("date_from"), c.Query("date_to"), c.Query("page"), c.Query("limit"))
+		if err != nil {
+			response.Fail(c, 400, "Validation error", "VALIDATION_ERROR", []string{"invalid date format"})
+			return
+		}
+		out, err := reportSvc.PaymentReport(f)
+		if err != nil {
+			response.Fail(c, 500, "Internal server error", "INTERNAL_ERROR", nil)
+			return
+		}
+		response.OK(c, out)
+	})
+	admin.GET("/audit-logs", func(c *gin.Context) {
+		f, err := audit.ParseFilter(c.Query("actor_type"), c.Query("action"), c.Query("resource_type"), c.Query("date_from"), c.Query("date_to"), c.Query("page"), c.Query("limit"))
+		if err != nil {
+			response.Fail(c, 400, "Validation error", "VALIDATION_ERROR", []string{"invalid date format"})
+			return
+		}
+		items, total, err := auditSvc.List(f)
+		if err != nil {
+			response.Fail(c, 500, "Internal server error", "INTERNAL_ERROR", nil)
+			return
+		}
+		response.OK(c, gin.H{"items": items, "page": f.Page, "limit": f.Limit, "total": total})
+	})
 }
 
 func ok(c *gin.Context) { response.OK(c, gin.H{"todo": true}) }
