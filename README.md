@@ -254,7 +254,11 @@ CREATE_PRODUCT_RESPONSE=$(curl -s -X POST "$API_V1/admin/products" \
     \"name\": \"Bluetooth Speaker X1\",
     \"slug\": \"bluetooth-speaker-x1\",
     \"description\": \"Portable 20W speaker with Bluetooth 5.3\",
-    \"price_amount\": 349000,
+    \"price_amount\": 250000,
+    \"compare_at_price_amount\": 350000,
+    \"is_discount_active\": true,
+    \"discount_start_at\": \"2026-05-01T00:00:00+07:00\",
+    \"discount_end_at\": \"2026-05-31T23:59:59+07:00\",
     \"stock\": 50,
     \"images\": [
       {

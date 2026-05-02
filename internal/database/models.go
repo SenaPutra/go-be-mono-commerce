@@ -60,13 +60,17 @@ type Category struct {
 
 type Product struct {
 	BaseModel
-	CategoryID  *uuid.UUID `gorm:"type:uuid;index" json:"category_id"`
-	Name        string     `gorm:"type:varchar(200);not null" json:"name"`
-	Slug        string     `gorm:"type:varchar(220);not null;uniqueIndex" json:"slug"`
-	Description string     `gorm:"type:text" json:"description"`
-	PriceAmount int64      `gorm:"not null" json:"price_amount"`
-	Stock       int        `gorm:"not null;default:0" json:"stock"`
-	IsActive    bool       `gorm:"not null;default:false" json:"is_active"`
+	CategoryID           *uuid.UUID `gorm:"type:uuid;index" json:"category_id"`
+	Name                 string     `gorm:"type:varchar(200);not null" json:"name"`
+	Slug                 string     `gorm:"type:varchar(220);not null;uniqueIndex" json:"slug"`
+	Description          string     `gorm:"type:text" json:"description"`
+	PriceAmount          int64      `gorm:"not null" json:"price_amount"`
+	CompareAtPriceAmount *int64     `gorm:"default:null" json:"compare_at_price_amount"`
+	DiscountStartAt      *time.Time `json:"discount_start_at"`
+	DiscountEndAt        *time.Time `json:"discount_end_at"`
+	IsDiscountActive     bool       `gorm:"not null;default:false" json:"is_discount_active"`
+	Stock                int        `gorm:"not null;default:0" json:"stock"`
+	IsActive             bool       `gorm:"not null;default:false" json:"is_active"`
 }
 
 type ProductImage struct {
