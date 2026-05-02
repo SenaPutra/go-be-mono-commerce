@@ -3,10 +3,12 @@ package server
 import (
 	"github.com/gin-gonic/gin"
 	"go-be-mono-commerce/internal/auth"
+	"go-be-mono-commerce/internal/category"
 	"go-be-mono-commerce/internal/config"
 	"go-be-mono-commerce/internal/database"
 	"go-be-mono-commerce/internal/middleware"
 	"go-be-mono-commerce/internal/payment"
+	"go-be-mono-commerce/internal/product"
 	"go-be-mono-commerce/pkg/logger"
 	"go-be-mono-commerce/pkg/response"
 	"gorm.io/gorm"
@@ -36,9 +38,32 @@ func New(cfg config.Config) (*Server, error) {
 }
 
 func registerRoutes(v1 *gin.RouterGroup, cfg config.Config, db *gorm.DB) {
-	v1.GET("/products", func(c *gin.Context) { response.OK(c, gin.H{"items": []any{}}) })
-	v1.GET("/products/:slug", func(c *gin.Context) { response.OK(c, gin.H{"slug": c.Param("slug")}) })
-	v1.GET("/categories", func(c *gin.Context) { response.OK(c, gin.H{"items": []any{}}) })
+	catSvc := category.NewService(db)
+	prodSvc := product.NewService(db)
+	v1.GET("/categories", func(c *gin.Context) {
+		items, err := catSvc.ListActive()
+		if err != nil {
+			response.Fail(c, 500, "Internal server error", "INTERNAL_ERROR", nil)
+			return
+		}
+		response.OK(c, gin.H{"items": items})
+	})
+	v1.GET("/products", func(c *gin.Context) {
+		res, err := prodSvc.ListPublic(c)
+		if err != nil {
+			response.Fail(c, 500, "Internal server error", "INTERNAL_ERROR", nil)
+			return
+		}
+		response.OK(c, res)
+	})
+	v1.GET("/products/:slug", func(c *gin.Context) {
+		item, err := prodSvc.DetailBySlug(c.Param("slug"))
+		if err != nil {
+			product.HandleErr(c, err)
+			return
+		}
+		response.OK(c, item)
+	})
 
 	authGroup := v1.Group("/auth")
 	authSvc := auth.NewService(db, cfg.JWTSecret, cfg.JWTTTLHours)
@@ -82,15 +107,135 @@ func registerRoutes(v1 *gin.RouterGroup, cfg config.Config, db *gorm.DB) {
 	admin.GET("/customers", ok)
 	admin.GET("/customers/:id", ok)
 	admin.GET("/customers/:id/orders", ok)
-	admin.POST("/products", ok)
-	admin.PUT("/products/:id", ok)
-	admin.DELETE("/products/:id", ok)
-	admin.PATCH("/products/:id/publish", ok)
-	admin.PATCH("/products/:id/unpublish", ok)
-	admin.PUT("/products/:id/stock", ok)
-	admin.POST("/categories", ok)
-	admin.PUT("/categories/:id", ok)
-	admin.DELETE("/categories/:id", ok)
+	admin.POST("/categories", func(c *gin.Context) {
+		var req category.UpsertCategoryRequest
+		if c.ShouldBindJSON(&req) != nil {
+			response.Fail(c, 400, "Validation error", "VALIDATION_ERROR", []string{"invalid request body"})
+			return
+		}
+		out, err := catSvc.Create(req)
+		if err != nil {
+			product.HandleErr(c, err)
+			return
+		}
+		response.Created(c, out)
+	})
+	admin.PUT("/categories/:id", func(c *gin.Context) {
+		id, err := auth.ParseUUID(c.Param("id"))
+		if err != nil {
+			response.Fail(c, 400, "Validation error", "VALIDATION_ERROR", []string{"invalid id"})
+			return
+		}
+		var req category.UpsertCategoryRequest
+		if c.ShouldBindJSON(&req) != nil {
+			response.Fail(c, 400, "Validation error", "VALIDATION_ERROR", []string{"invalid request body"})
+			return
+		}
+		out, err := catSvc.Update(id, req)
+		if err != nil {
+			product.HandleErr(c, err)
+			return
+		}
+		response.OK(c, out)
+	})
+	admin.DELETE("/categories/:id", func(c *gin.Context) {
+		id, err := auth.ParseUUID(c.Param("id"))
+		if err != nil {
+			response.Fail(c, 400, "Validation error", "VALIDATION_ERROR", []string{"invalid id"})
+			return
+		}
+		if err := catSvc.Delete(id); err != nil {
+			product.HandleErr(c, err)
+			return
+		}
+		response.OK(c, gin.H{"deleted": true})
+	})
+	admin.POST("/products", func(c *gin.Context) {
+		var req product.UpsertProductRequest
+		if c.ShouldBindJSON(&req) != nil {
+			response.Fail(c, 400, "Validation error", "VALIDATION_ERROR", []string{"invalid request body"})
+			return
+		}
+		out, err := prodSvc.Create(req)
+		if err != nil {
+			product.HandleErr(c, err)
+			return
+		}
+		response.Created(c, out)
+	})
+	admin.PUT("/products/:id", func(c *gin.Context) {
+		id, err := auth.ParseUUID(c.Param("id"))
+		if err != nil {
+			response.Fail(c, 400, "Validation error", "VALIDATION_ERROR", []string{"invalid id"})
+			return
+		}
+		var req product.UpsertProductRequest
+		if c.ShouldBindJSON(&req) != nil {
+			response.Fail(c, 400, "Validation error", "VALIDATION_ERROR", []string{"invalid request body"})
+			return
+		}
+		out, err := prodSvc.Update(id, req)
+		if err != nil {
+			product.HandleErr(c, err)
+			return
+		}
+		response.OK(c, out)
+	})
+	admin.DELETE("/products/:id", func(c *gin.Context) {
+		id, err := auth.ParseUUID(c.Param("id"))
+		if err != nil {
+			response.Fail(c, 400, "Validation error", "VALIDATION_ERROR", []string{"invalid id"})
+			return
+		}
+		if err := prodSvc.Delete(id); err != nil {
+			product.HandleErr(c, err)
+			return
+		}
+		response.OK(c, gin.H{"deleted": true})
+	})
+	admin.PATCH("/products/:id/publish", func(c *gin.Context) {
+		id, err := auth.ParseUUID(c.Param("id"))
+		if err != nil {
+			response.Fail(c, 400, "Validation error", "VALIDATION_ERROR", []string{"invalid id"})
+			return
+		}
+		if err := prodSvc.SetActive(id, true); err != nil {
+			product.HandleErr(c, err)
+			return
+		}
+		response.OK(c, gin.H{"published": true})
+	})
+	admin.PATCH("/products/:id/unpublish", func(c *gin.Context) {
+		id, err := auth.ParseUUID(c.Param("id"))
+		if err != nil {
+			response.Fail(c, 400, "Validation error", "VALIDATION_ERROR", []string{"invalid id"})
+			return
+		}
+		if err := prodSvc.SetActive(id, false); err != nil {
+			product.HandleErr(c, err)
+			return
+		}
+		response.OK(c, gin.H{"published": false})
+	})
+	admin.PUT("/products/:id/stock", func(c *gin.Context) {
+		id, err := auth.ParseUUID(c.Param("id"))
+		if err != nil {
+			response.Fail(c, 400, "Validation error", "VALIDATION_ERROR", []string{"invalid id"})
+			return
+		}
+		var req struct {
+			Stock int `json:"stock"`
+		}
+		if c.ShouldBindJSON(&req) != nil {
+			response.Fail(c, 400, "Validation error", "VALIDATION_ERROR", []string{"invalid request body"})
+			return
+		}
+		if err := prodSvc.SetStock(id, req.Stock); err != nil {
+			product.HandleErr(c, err)
+			return
+		}
+		response.OK(c, gin.H{"stock": req.Stock})
+	})
 	admin.GET("/orders", ok)
 	admin.GET("/orders/:id", ok)
 	admin.PATCH("/orders/:id/status", ok)

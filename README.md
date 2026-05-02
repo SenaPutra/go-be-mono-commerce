@@ -31,7 +31,13 @@ Base URL: `http://localhost:8080/api/v1`
 - Register customer: `curl -X POST localhost:8080/api/v1/auth/customer/register -H 'Content-Type: application/json' -d '{"name":"Sena","email":"sena@example.com","phone":"08123456789","password":"secret123"}'`
 - Login customer: `curl -X POST localhost:8080/api/v1/auth/customer/login -H 'Content-Type: application/json' -d '{"email":"sena@example.com","password":"secret123"}'`
 - Login admin: `curl -X POST localhost:8080/api/v1/auth/admin/login -H 'Content-Type: application/json' -d '{"email":"admin@example.com","password":"admin12345"}'`
-- Create product: `curl -X POST localhost:8080/api/v1/admin/products -H 'Authorization: Bearer <admin_token>'`
+- Create category: `curl -X POST localhost:8080/api/v1/admin/categories -H 'Authorization: Bearer <admin_token>' -H 'Content-Type: application/json' -d '{"name":"Speaker","slug":"speaker"}'`
+- Create product: `curl -X POST localhost:8080/api/v1/admin/products -H 'Authorization: Bearer <admin_token>' -H 'Content-Type: application/json' -d '{"category_id":"<category_uuid>","name":"Bluetooth Speaker X1","slug":"bluetooth-speaker-x1","description":"Portable speaker","price_amount":250000,"stock":100,"images":[{"image_url":"https://example.com/speaker.jpg","is_primary":true}]}'`
+- List products: `curl -X GET 'localhost:8080/api/v1/products?page=1&limit=10&category_slug=speaker&search=speaker&min_price=100000&max_price=500000&sort_by=price_amount&sort_order=asc'`
+- Product detail by slug: `curl -X GET localhost:8080/api/v1/products/bluetooth-speaker-x1`
+- Publish product: `curl -X PATCH localhost:8080/api/v1/admin/products/<product_id>/publish -H 'Authorization: Bearer <admin_token>'`
+- Unpublish product: `curl -X PATCH localhost:8080/api/v1/admin/products/<product_id>/unpublish -H 'Authorization: Bearer <admin_token>'`
+- Update stock: `curl -X PUT localhost:8080/api/v1/admin/products/<product_id>/stock -H 'Authorization: Bearer <admin_token>' -H 'Content-Type: application/json' -d '{"stock":120}'`
 - Add to cart: `curl -X POST localhost:8080/api/v1/cart/items -H 'Authorization: Bearer <customer_token>'`
 - Checkout: `curl -X POST localhost:8080/api/v1/orders/checkout -H 'Authorization: Bearer <customer_token>'`
 - Create payment: `curl -X POST localhost:8080/api/v1/payments/orders/<order_id>/pay -H 'Authorization: Bearer <customer_token>'`
