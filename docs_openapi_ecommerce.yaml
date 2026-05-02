@@ -1,0 +1,755 @@
+openapi: 3.0.3
+info:
+  title: Standard E-Commerce Backend API
+  version: 1.0.0
+  description: API specification for a standard e-commerce backend.
+servers:
+  - url: /api/v1
+    description: Base API v1 path
+
+tags:
+  - name: Auth
+  - name: Customer
+  - name: Product
+  - name: Category
+  - name: Cart
+  - name: Order
+  - name: Payment
+  - name: Admin Product
+  - name: Admin Order
+  - name: Admin Customer
+  - name: Admin Report
+  - name: Admin Audit Log
+  - name: Upload
+  - name: Webhook
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  schemas:
+    StandardResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: true
+        message:
+          type: string
+          example: Request successful
+        data:
+          nullable: true
+      required: [success, message]
+
+    ErrorResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: false
+        message:
+          type: string
+          example: Validation failed
+        error:
+          type: object
+          properties:
+            code:
+              type: string
+              example: VALIDATION_ERROR
+            details:
+              type: string
+              example: email is required
+      required: [success, message]
+
+    CustomerAddress:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        label:
+          type: string
+          example: Home
+        recipientName:
+          type: string
+        phone:
+          type: string
+        line1:
+          type: string
+        line2:
+          type: string
+          nullable: true
+        city:
+          type: string
+        state:
+          type: string
+        postalCode:
+          type: string
+        country:
+          type: string
+        isDefault:
+          type: boolean
+      required: [id, recipientName, phone, line1, city, state, postalCode, country, isDefault]
+
+    Customer:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        email:
+          type: string
+          format: email
+        fullName:
+          type: string
+        phone:
+          type: string
+        status:
+          type: string
+          enum: [active, suspended]
+        addresses:
+          type: array
+          items:
+            $ref: '#/components/schemas/CustomerAddress'
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+      required: [id, email, fullName, status, createdAt, updatedAt]
+
+    AdminUser:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        email:
+          type: string
+          format: email
+        fullName:
+          type: string
+        role:
+          type: string
+          enum: [admin, manager]
+        createdAt:
+          type: string
+          format: date-time
+      required: [id, email, fullName, role, createdAt]
+
+    Category:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        slug:
+          type: string
+        description:
+          type: string
+          nullable: true
+        parentId:
+          type: string
+          format: uuid
+          nullable: true
+        isActive:
+          type: boolean
+      required: [id, name, slug, isActive]
+
+    Product:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        sku:
+          type: string
+        name:
+          type: string
+        slug:
+          type: string
+        description:
+          type: string
+        categoryId:
+          type: string
+          format: uuid
+        price:
+          type: number
+          format: float
+        stock:
+          type: integer
+          format: int32
+        images:
+          type: array
+          items:
+            type: string
+            format: uri
+        isActive:
+          type: boolean
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+      required: [id, sku, name, slug, categoryId, price, stock, isActive, createdAt, updatedAt]
+
+    CartItem:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        productId:
+          type: string
+          format: uuid
+        productName:
+          type: string
+        quantity:
+          type: integer
+          minimum: 1
+        unitPrice:
+          type: number
+          format: float
+        subtotal:
+          type: number
+          format: float
+      required: [id, productId, productName, quantity, unitPrice, subtotal]
+
+    Cart:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        customerId:
+          type: string
+          format: uuid
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/CartItem'
+        totalAmount:
+          type: number
+          format: float
+        updatedAt:
+          type: string
+          format: date-time
+      required: [id, customerId, items, totalAmount, updatedAt]
+
+    OrderItem:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        productId:
+          type: string
+          format: uuid
+        productName:
+          type: string
+        quantity:
+          type: integer
+        unitPrice:
+          type: number
+          format: float
+        subtotal:
+          type: number
+          format: float
+      required: [id, productId, productName, quantity, unitPrice, subtotal]
+
+    Order:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        orderNumber:
+          type: string
+        customerId:
+          type: string
+          format: uuid
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/OrderItem'
+        shippingAddress:
+          $ref: '#/components/schemas/CustomerAddress'
+        status:
+          type: string
+          enum: [pending, paid, processing, shipped, delivered, cancelled, refunded]
+        paymentStatus:
+          type: string
+          enum: [unpaid, paid, failed, refunded]
+        subtotal:
+          type: number
+          format: float
+        shippingFee:
+          type: number
+          format: float
+        totalAmount:
+          type: number
+          format: float
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+      required: [id, orderNumber, customerId, items, shippingAddress, status, paymentStatus, subtotal, shippingFee, totalAmount, createdAt, updatedAt]
+
+    Payment:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        orderId:
+          type: string
+          format: uuid
+        provider:
+          type: string
+          example: stripe
+        method:
+          type: string
+          example: card
+        amount:
+          type: number
+          format: float
+        currency:
+          type: string
+          example: USD
+        status:
+          type: string
+          enum: [pending, succeeded, failed, cancelled, refunded]
+        providerRef:
+          type: string
+        paidAt:
+          type: string
+          format: date-time
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+      required: [id, orderId, provider, method, amount, currency, status, createdAt]
+
+    AuditLog:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        actorId:
+          type: string
+          format: uuid
+        actorType:
+          type: string
+          enum: [admin, system]
+        action:
+          type: string
+        entityType:
+          type: string
+        entityId:
+          type: string
+          format: uuid
+        before:
+          type: object
+          nullable: true
+        after:
+          type: object
+          nullable: true
+        ipAddress:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+      required: [id, actorId, actorType, action, entityType, entityId, createdAt]
+
+    LoginRequest:
+      type: object
+      properties:
+        email:
+          type: string
+          format: email
+        password:
+          type: string
+          format: password
+      required: [email, password]
+
+    RegisterCustomerRequest:
+      type: object
+      properties:
+        email:
+          type: string
+          format: email
+        password:
+          type: string
+          format: password
+        fullName:
+          type: string
+        phone:
+          type: string
+      required: [email, password, fullName]
+
+    CreateProductRequest:
+      type: object
+      properties:
+        sku:
+          type: string
+        name:
+          type: string
+        description:
+          type: string
+        categoryId:
+          type: string
+          format: uuid
+        price:
+          type: number
+          format: float
+        stock:
+          type: integer
+        images:
+          type: array
+          items:
+            type: string
+            format: uri
+      required: [sku, name, categoryId, price, stock]
+
+    AddCartItemRequest:
+      type: object
+      properties:
+        productId:
+          type: string
+          format: uuid
+        quantity:
+          type: integer
+          minimum: 1
+      required: [productId, quantity]
+
+    CheckoutRequest:
+      type: object
+      properties:
+        addressId:
+          type: string
+          format: uuid
+        paymentMethod:
+          type: string
+          example: card
+        notes:
+          type: string
+          nullable: true
+      required: [addressId, paymentMethod]
+
+    CreatePaymentResponse:
+      type: object
+      properties:
+        paymentId:
+          type: string
+          format: uuid
+        clientSecret:
+          type: string
+        redirectUrl:
+          type: string
+          format: uri
+          nullable: true
+      required: [paymentId, clientSecret]
+
+    UpdateOrderStatusRequest:
+      type: object
+      properties:
+        status:
+          type: string
+          enum: [pending, paid, processing, shipped, delivered, cancelled, refunded]
+        note:
+          type: string
+          nullable: true
+      required: [status]
+
+paths:
+  /auth/register:
+    post:
+      tags: [Auth]
+      summary: Register a new customer account
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RegisterCustomerRequest'
+      responses:
+        '201':
+          description: Customer registered
+  /auth/login:
+    post:
+      tags: [Auth]
+      summary: Login for customer/admin
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginRequest'
+      responses:
+        '200':
+          description: Authenticated
+  /auth/me:
+    get:
+      tags: [Auth]
+      summary: Get current customer profile
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Current profile
+
+  /customers/me:
+    get:
+      tags: [Customer]
+      summary: Get customer profile
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Customer profile
+
+  /products:
+    get:
+      tags: [Product]
+      summary: List products (public)
+      responses:
+        '200':
+          description: Product list
+  /products/{productId}:
+    get:
+      tags: [Product]
+      summary: Get product detail (public)
+      parameters:
+        - in: path
+          name: productId
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Product detail
+
+  /categories:
+    get:
+      tags: [Category]
+      summary: List categories (public)
+      responses:
+        '200':
+          description: Category list
+
+  /cart:
+    get:
+      tags: [Cart]
+      summary: Get current customer cart
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Cart detail
+  /cart/items:
+    post:
+      tags: [Cart]
+      summary: Add item to cart
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AddCartItemRequest'
+      responses:
+        '200':
+          description: Updated cart
+
+  /orders/checkout:
+    post:
+      tags: [Order]
+      summary: Checkout cart into order
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CheckoutRequest'
+      responses:
+        '201':
+          description: Order created
+  /orders:
+    get:
+      tags: [Order]
+      summary: List customer orders
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Orders list
+  /orders/{orderId}:
+    get:
+      tags: [Order]
+      summary: Get customer order detail
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: orderId
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Order detail
+
+  /payments:
+    post:
+      tags: [Payment]
+      summary: Create payment for order
+      security:
+        - bearerAuth: []
+      responses:
+        '201':
+          description: Payment created
+  /payments/{paymentId}:
+    get:
+      tags: [Payment]
+      summary: Get payment status
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: paymentId
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Payment detail
+
+  /admin/products:
+    post:
+      tags: [Admin Product]
+      summary: Create product (admin)
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateProductRequest'
+      responses:
+        '201':
+          description: Product created
+
+  /admin/orders:
+    get:
+      tags: [Admin Order]
+      summary: List all orders (admin)
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Order list
+  /admin/orders/{orderId}/status:
+    patch:
+      tags: [Admin Order]
+      summary: Update order status (admin)
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: orderId
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateOrderStatusRequest'
+      responses:
+        '200':
+          description: Order status updated
+
+  /admin/customers:
+    get:
+      tags: [Admin Customer]
+      summary: List customers (admin)
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Customer list
+
+  /admin/reports/sales:
+    get:
+      tags: [Admin Report]
+      summary: Sales report (admin)
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Sales summary
+
+  /admin/audit-logs:
+    get:
+      tags: [Admin Audit Log]
+      summary: List audit logs (admin)
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Audit logs
+
+  /uploads:
+    post:
+      tags: [Upload]
+      summary: Upload file (admin/customer)
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                file:
+                  type: string
+                  format: binary
+              required: [file]
+      responses:
+        '201':
+          description: File uploaded
+
+  /webhooks/payments:
+    post:
+      tags: [Webhook]
+      summary: Payment provider webhook
+      security: []
+      parameters:
+        - in: header
+          name: X-Signature
+          required: true
+          schema:
+            type: string
+          description: HMAC signature used to validate webhook authenticity
+      responses:
+        '200':
+          description: Webhook processed
