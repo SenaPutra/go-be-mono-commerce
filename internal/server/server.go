@@ -3,6 +3,7 @@ package server
 import (
 	"github.com/gin-gonic/gin"
 	"go-be-mono-commerce/internal/auth"
+	"go-be-mono-commerce/internal/cart"
 	"go-be-mono-commerce/internal/category"
 	"go-be-mono-commerce/internal/config"
 	"go-be-mono-commerce/internal/database"
@@ -81,12 +82,94 @@ func registerRoutes(v1 *gin.RouterGroup, cfg config.Config, db *gorm.DB) {
 	cust.DELETE("/addresses/:id", ok)
 	cust.GET("/orders", ok)
 	cust.GET("/orders/:id", ok)
-	cart := v1.Group("/cart", middleware.AuthJWT(cfg.JWTSecret), middleware.RequireRoles(auth.RoleCustomer))
-	cart.GET("", ok)
-	cart.POST("/items", ok)
-	cart.PUT("/items/:id", ok)
-	cart.DELETE("/items/:id", ok)
-	cart.DELETE("", ok)
+	cartSvc := cart.NewService(db)
+	cartGroup := v1.Group("/cart", middleware.AuthJWT(cfg.JWTSecret), middleware.RequireRoles(auth.RoleCustomer))
+	cartGroup.GET("", func(c *gin.Context) {
+		uid, err := auth.ParseUUID(c.GetString("user_id"))
+		if err != nil {
+			response.Fail(c, 401, "Unauthorized", "UNAUTHORIZED", nil)
+			return
+		}
+		out, err := cartSvc.Get(uid)
+		if err != nil {
+			code, msg, ec, de := cart.HandleErr(err)
+			response.Fail(c, code, msg, ec, de)
+			return
+		}
+		response.OK(c, out)
+	})
+	cartGroup.POST("/items", func(c *gin.Context) {
+		uid, err := auth.ParseUUID(c.GetString("user_id"))
+		if err != nil {
+			response.Fail(c, 401, "Unauthorized", "UNAUTHORIZED", nil)
+			return
+		}
+		var req cart.AddItemRequest
+		if c.ShouldBindJSON(&req) != nil {
+			response.Fail(c, 400, "Validation error", "VALIDATION_ERROR", []string{"invalid request body"})
+			return
+		}
+		if err := cartSvc.AddItem(uid, req); err != nil {
+			code, msg, ec, de := cart.HandleErr(err)
+			response.Fail(c, code, msg, ec, de)
+			return
+		}
+		response.OK(c, gin.H{"added": true})
+	})
+	cartGroup.PUT("/items/:id", func(c *gin.Context) {
+		uid, err := auth.ParseUUID(c.GetString("user_id"))
+		if err != nil {
+			response.Fail(c, 401, "Unauthorized", "UNAUTHORIZED", nil)
+			return
+		}
+		itemID, err := auth.ParseUUID(c.Param("id"))
+		if err != nil {
+			response.Fail(c, 400, "Validation error", "VALIDATION_ERROR", []string{"invalid id"})
+			return
+		}
+		var req cart.UpdateItemRequest
+		if c.ShouldBindJSON(&req) != nil {
+			response.Fail(c, 400, "Validation error", "VALIDATION_ERROR", []string{"invalid request body"})
+			return
+		}
+		if err := cartSvc.UpdateItem(uid, itemID, req.Quantity); err != nil {
+			code, msg, ec, de := cart.HandleErr(err)
+			response.Fail(c, code, msg, ec, de)
+			return
+		}
+		response.OK(c, gin.H{"updated": true})
+	})
+	cartGroup.DELETE("/items/:id", func(c *gin.Context) {
+		uid, err := auth.ParseUUID(c.GetString("user_id"))
+		if err != nil {
+			response.Fail(c, 401, "Unauthorized", "UNAUTHORIZED", nil)
+			return
+		}
+		itemID, err := auth.ParseUUID(c.Param("id"))
+		if err != nil {
+			response.Fail(c, 400, "Validation error", "VALIDATION_ERROR", []string{"invalid id"})
+			return
+		}
+		if err := cartSvc.RemoveItem(uid, itemID); err != nil {
+			code, msg, ec, de := cart.HandleErr(err)
+			response.Fail(c, code, msg, ec, de)
+			return
+		}
+		response.OK(c, gin.H{"deleted": true})
+	})
+	cartGroup.DELETE("", func(c *gin.Context) {
+		uid, err := auth.ParseUUID(c.GetString("user_id"))
+		if err != nil {
+			response.Fail(c, 401, "Unauthorized", "UNAUTHORIZED", nil)
+			return
+		}
+		if err := cartSvc.Clear(uid); err != nil {
+			code, msg, ec, de := cart.HandleErr(err)
+			response.Fail(c, code, msg, ec, de)
+			return
+		}
+		response.OK(c, gin.H{"cleared": true})
+	})
 	ord := v1.Group("/orders", middleware.AuthJWT(cfg.JWTSecret), middleware.RequireRoles(auth.RoleCustomer))
 	ord.POST("/checkout", ok)
 	ord.GET("", ok)
