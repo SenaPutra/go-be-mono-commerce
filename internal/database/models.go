@@ -101,13 +101,14 @@ type CartItem struct {
 }
 
 type Order struct {
-	ID          uuid.UUID `gorm:"type:uuid;default:gen_random_uuid();primaryKey" json:"id"`
-	CustomerID  uuid.UUID `gorm:"type:uuid;not null;index" json:"customer_id"`
-	OrderNumber string    `gorm:"type:varchar(80);not null;uniqueIndex" json:"order_number"`
-	TotalAmount int64     `gorm:"not null" json:"total_amount"`
-	Status      string    `gorm:"type:varchar(50);not null;default:'PENDING_PAYMENT'" json:"status"`
-	CreatedAt   time.Time `json:"created_at"`
-	UpdatedAt   time.Time `json:"updated_at"`
+	ID            uuid.UUID `gorm:"type:uuid;default:gen_random_uuid();primaryKey" json:"id"`
+	CustomerID    uuid.UUID `gorm:"type:uuid;not null;index" json:"customer_id"`
+	OrderNumber   string    `gorm:"type:varchar(80);not null;uniqueIndex" json:"order_number"`
+	TotalAmount   int64     `gorm:"not null" json:"total_amount"`
+	Status        string    `gorm:"type:varchar(50);not null;default:'PENDING_PAYMENT'" json:"status"`
+	StockRestored bool      `gorm:"not null;default:false" json:"stock_restored"`
+	CreatedAt     time.Time `json:"created_at"`
+	UpdatedAt     time.Time `json:"updated_at"`
 }
 
 type OrderItem struct {

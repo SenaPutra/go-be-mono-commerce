@@ -10,6 +10,7 @@ import (
 	"github.com/google/uuid"
 	"go-be-mono-commerce/internal/database"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 const (
@@ -21,6 +22,7 @@ const (
 	StatusCompleted      = "COMPLETED"
 	StatusCancelled      = "CANCELLED"
 	StatusExpired        = "EXPIRED"
+	StatusFailed         = "FAILED"
 )
 
 type Service struct{ db *gorm.DB }
@@ -98,7 +100,7 @@ func (s *Service) Checkout(customerID uuid.UUID, req CheckoutRequest) (*database
 			total += sub
 		}
 
-		order := database.Order{CustomerID: customerID, OrderNumber: generateOrderNumber(), TotalAmount: total, Status: StatusPendingPayment}
+		order := database.Order{CustomerID: customerID, OrderNumber: generateOrderNumber(), TotalAmount: total, Status: StatusPendingPayment, StockRestored: false}
 		if err := tx.Create(&order).Error; err != nil {
 			return err
 		}
@@ -151,25 +153,56 @@ func (s *Service) GetAdminOrder(orderID uuid.UUID) (*database.Order, error) {
 	return &o, nil
 }
 
-var allowedTransitions = map[string]map[string]bool{StatusPendingPayment: {StatusPaid: true, StatusCancelled: true, StatusExpired: true}, StatusPaid: {StatusProcessing: true, StatusCancelled: true}, StatusProcessing: {StatusReadyToShip: true}, StatusReadyToShip: {StatusShipped: true}, StatusShipped: {StatusCompleted: true}}
+var allowedTransitions = map[string]map[string]bool{StatusPendingPayment: {StatusPaid: true, StatusCancelled: true, StatusExpired: true, StatusFailed: true}, StatusPaid: {StatusProcessing: true, StatusCancelled: true}, StatusProcessing: {StatusReadyToShip: true}, StatusReadyToShip: {StatusShipped: true}, StatusShipped: {StatusCompleted: true}}
 
 func (s *Service) UpdateOrderStatus(orderID uuid.UUID, newStatus string) (*database.Order, error) {
 	newStatus = strings.ToUpper(strings.TrimSpace(newStatus))
 	var o database.Order
-	if err := s.db.Where("id = ?", orderID).First(&o).Error; err != nil {
-		return nil, errors.New("NOT_FOUND:order")
-	}
-	if o.Status == newStatus {
-		return &o, nil
-	}
-	if !allowedTransitions[o.Status][newStatus] {
-		return nil, fmt.Errorf("VALIDATION:invalid status transition from %s to %s", o.Status, newStatus)
-	}
-	o.Status = newStatus
-	if err := s.db.Save(&o).Error; err != nil {
+	err := s.db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ?", orderID).First(&o).Error; err != nil {
+			return errors.New("NOT_FOUND:order")
+		}
+		if o.Status == newStatus {
+			return nil
+		}
+		if !allowedTransitions[o.Status][newStatus] {
+			return fmt.Errorf("VALIDATION:invalid status transition from %s to %s", o.Status, newStatus)
+		}
+		if err := maybeRestoreStock(tx, &o, o.Status, newStatus); err != nil {
+			return err
+		}
+		o.Status = newStatus
+		return tx.Save(&o).Error
+	})
+	if err != nil {
 		return nil, err
 	}
 	return &o, nil
+}
+
+func maybeRestoreStock(tx *gorm.DB, order *database.Order, oldStatus, newStatus string) error {
+	if oldStatus != StatusPendingPayment {
+		return nil
+	}
+	if newStatus != StatusExpired && newStatus != StatusFailed && newStatus != StatusCancelled {
+		return nil
+	}
+	if order.StockRestored {
+		return nil
+	}
+	var items []database.OrderItem
+	if err := tx.Where("order_id = ?", order.ID).Find(&items).Error; err != nil {
+		return err
+	}
+	for _, item := range items {
+		if err := tx.Model(&database.Product{}).
+			Where("id = ? AND deleted_at IS NULL", item.ProductID).
+			Update("stock", gorm.Expr("stock + ?", item.Quantity)).Error; err != nil {
+			return err
+		}
+	}
+	order.StockRestored = true
+	return nil
 }
 
 func HandleErr(err error) (int, string, string, []string) {

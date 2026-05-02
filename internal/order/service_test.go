@@ -189,3 +189,36 @@ func TestConcurrentCheckoutMany(t *testing.T) {
 		t.Fatalf("stock negative")
 	}
 }
+
+func TestCancelPendingPaymentRestoresStock(t *testing.T) {
+	db := testDB(t)
+	svc := NewService(db)
+	p := database.Product{Name: "P3", Slug: uuid.NewString(), PriceAmount: 100, Stock: 2, IsActive: true}
+	db.Create(&p)
+	o := database.Order{CustomerID: uuid.New(), OrderNumber: "ORD-CAN-1", TotalAmount: 100, Status: StatusPendingPayment, StockRestored: false}
+	db.Create(&o)
+	db.Create(&database.OrderItem{OrderID: o.ID, ProductID: p.ID, Quantity: 2, PriceAmount: 100, SubtotalAmount: 200, ProductNameSnapshot: "P3"})
+	db.Model(&database.Product{}).Where("id = ?", p.ID).Update("stock", 0)
+	updated, err := svc.UpdateOrderStatus(o.ID, StatusCancelled)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !updated.StockRestored {
+		t.Fatal("expected stock_restored true")
+	}
+	var product database.Product
+	db.First(&product, "id = ?", p.ID)
+	if product.Stock != 2 {
+		t.Fatalf("expected restored stock 2, got %d", product.Stock)
+	}
+}
+
+func TestCancelCompletedOrderRejected(t *testing.T) {
+	db := testDB(t)
+	svc := NewService(db)
+	o := database.Order{CustomerID: uuid.New(), OrderNumber: "ORD-DONE-1", TotalAmount: 100, Status: StatusCompleted}
+	db.Create(&o)
+	if _, err := svc.UpdateOrderStatus(o.ID, StatusCancelled); err == nil {
+		t.Fatal("expected invalid transition error")
+	}
+}
