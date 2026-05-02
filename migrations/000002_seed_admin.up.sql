@@ -1,0 +1,1 @@
+-- Seed admin placeholder. Use app startup seed command or SQL with bcrypt hash.
