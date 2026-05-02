@@ -6,7 +6,9 @@ Go 1.22+, Gin, GORM, PostgreSQL, JWT, bcrypt, Zap.
 ## Run locally
 1. Copy env: `cp .env.example .env`
 2. Start postgres: `docker compose -f deployments/docker-compose.yml up -d postgres`
-3. Run API: `go run ./cmd/api`
+3. Run tests: `go test ./...`
+4. Run API: `go run ./cmd/api`
+5. Health check: `curl -s localhost:8080/healthz`
 
 ## Migrations
 SQL files are in `migrations/` (intended for golang-migrate/goose integration).

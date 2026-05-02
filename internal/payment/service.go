@@ -140,7 +140,8 @@ func providerName(p PaymentProvider) string {
 func ParseUUID(v string) (uuid.UUID, error) { return uuid.Parse(v) }
 
 func applyWebhookStatus(current, incoming string) (string, bool) {
-	if current == incoming { return current, false }
+	if current == incoming {
+		return current, false
+	}
 	return incoming, true
 }
-
