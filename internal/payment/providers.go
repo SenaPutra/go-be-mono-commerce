@@ -22,9 +22,9 @@ func (p *MidtransProvider) ValidateWebhook(ctx context.Context, headers map[stri
 }
 func (p *MidtransProvider) ParseWebhook(ctx context.Context, payload []byte) (*PaymentWebhookEvent, error) {
 	var raw struct {
-		OrderID          string `json:"order_id"`
+		OrderID           string `json:"order_id"`
 		TransactionStatus string `json:"transaction_status"`
-		StatusCode       string `json:"status_code"`
+		StatusCode        string `json:"status_code"`
 	}
 	if err := json.Unmarshal(payload, &raw); err != nil {
 		return nil, err

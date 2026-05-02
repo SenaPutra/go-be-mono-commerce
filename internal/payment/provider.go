@@ -2,7 +2,10 @@ package payment
 
 import "context"
 
-type CreatePaymentRequest struct{ OrderID, OrderNumber string; Amount int64 }
+type CreatePaymentRequest struct {
+	OrderID, OrderNumber string
+	Amount               int64
+}
 type CreatePaymentResponse struct{ ProviderReference, RedirectURL, Status string }
 type PaymentStatusResponse struct{ ProviderReference, Status string }
 type PaymentWebhookEvent struct{ ProviderReference, Status, EventID string }
