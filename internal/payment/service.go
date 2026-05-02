@@ -138,7 +138,14 @@ func (s *paymentService) HandleWebhook(ctx context.Context, provider string, hea
 				return err
 			}
 			if nextStatus == StatusPaid || nextStatus == StatusExpired || nextStatus == StatusFailed {
-				if err := tx.Model(&database.Order{}).Where("id = ?", pay.OrderID).Updates(map[string]any{"status": nextStatus}).Error; err != nil {
+				var ord database.Order
+				if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&ord, "id = ?", pay.OrderID).Error; err != nil {
+					return err
+				}
+				if err := restoreOrderStockIfNeeded(tx, &ord, nextStatus); err != nil {
+					return err
+				}
+				if err := tx.Model(&ord).Updates(map[string]any{"status": nextStatus, "stock_restored": ord.StockRestored}).Error; err != nil {
 					return err
 				}
 			}
@@ -177,4 +184,29 @@ func applyWebhookStatus(current, incoming string) (string, bool) {
 		return current, false
 	}
 	return incoming, true
+}
+
+func restoreOrderStockIfNeeded(tx *gorm.DB, order *database.Order, nextStatus string) error {
+	if order.Status != "PENDING_PAYMENT" {
+		return nil
+	}
+	if nextStatus != StatusExpired && nextStatus != StatusFailed && nextStatus != StatusCancelled {
+		return nil
+	}
+	if order.StockRestored {
+		return nil
+	}
+	var items []database.OrderItem
+	if err := tx.Where("order_id = ?", order.ID).Find(&items).Error; err != nil {
+		return err
+	}
+	for _, item := range items {
+		if err := tx.Model(&database.Product{}).
+			Where("id = ? AND deleted_at IS NULL", item.ProductID).
+			Update("stock", gorm.Expr("stock + ?", item.Quantity)).Error; err != nil {
+			return err
+		}
+	}
+	order.StockRestored = true
+	return nil
 }

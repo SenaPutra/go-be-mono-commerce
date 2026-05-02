@@ -34,10 +34,35 @@ func setupDB(t *testing.T) *gorm.DB {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := db.AutoMigrate(&database.Order{}, &database.Payment{}, &database.PaymentWebhookEvent{}, &database.AuditLog{}); err != nil {
+	if err := db.AutoMigrate(&database.Product{}, &database.Order{}, &database.OrderItem{}, &database.Payment{}, &database.PaymentWebhookEvent{}, &database.AuditLog{}); err != nil {
 		t.Fatal(err)
 	}
 	return db
+}
+
+func TestWebhookExpiredRestoresStockIdempotent(t *testing.T) {
+	db := setupDB(t)
+	product := database.Product{Name: "P", Slug: "p-1", PriceAmount: 100, Stock: 3, IsActive: true}
+	db.Create(&product)
+	ord := database.Order{OrderNumber: "ORD-EXP", TotalAmount: 200, Status: "PENDING_PAYMENT"}
+	db.Create(&ord)
+	db.Create(&database.OrderItem{OrderID: ord.ID, ProductID: product.ID, Quantity: 2, PriceAmount: 100, SubtotalAmount: 200, ProductNameSnapshot: "P"})
+	db.Model(&database.Product{}).Where("id = ?", product.ID).Update("stock", 1)
+	pay := database.Payment{OrderID: ord.ID, Provider: "xendit", ProviderReference: ord.OrderNumber, Amount: 200, Status: StatusPending}
+	db.Create(&pay)
+	svc, _ := NewService(db, mkCfg("xendit"))
+	payload := []byte(`{"id":"evt-exp-1","external_id":"ORD-EXP","status":"EXPIRED"}`)
+	if err := svc.HandleWebhook(context.Background(), "xendit", map[string]string{"X-Callback-Token": "token"}, payload); err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.HandleWebhook(context.Background(), "xendit", map[string]string{"X-Callback-Token": "token"}, payload); err != nil {
+		t.Fatal(err)
+	}
+	var updatedProduct database.Product
+	db.First(&updatedProduct, "id = ?", product.ID)
+	if updatedProduct.Stock != 3 {
+		t.Fatalf("expected stock restored once to 3, got %d", updatedProduct.Stock)
+	}
 }
 
 func TestCreatePaymentAndDuplicate(t *testing.T) {
