@@ -5,6 +5,7 @@ import (
 	"math"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -23,13 +24,17 @@ type ProductImageInput struct {
 	IsPrimary bool   `json:"is_primary"`
 }
 type UpsertProductRequest struct {
-	CategoryID  string              `json:"category_id"`
-	Name        string              `json:"name"`
-	Slug        string              `json:"slug"`
-	Description string              `json:"description"`
-	PriceAmount int64               `json:"price_amount"`
-	Stock       int                 `json:"stock"`
-	Images      []ProductImageInput `json:"images"`
+	CategoryID           string              `json:"category_id"`
+	Name                 string              `json:"name"`
+	Slug                 string              `json:"slug"`
+	Description          string              `json:"description"`
+	PriceAmount          int64               `json:"price_amount"`
+	CompareAtPriceAmount *int64              `json:"compare_at_price_amount"`
+	IsDiscountActive     bool                `json:"is_discount_active"`
+	DiscountStartAt      *time.Time          `json:"discount_start_at"`
+	DiscountEndAt        *time.Time          `json:"discount_end_at"`
+	Stock                int                 `json:"stock"`
+	Images               []ProductImageInput `json:"images"`
 }
 
 type ProductListResponse struct {
@@ -50,6 +55,16 @@ func validate(req UpsertProductRequest) error {
 	if req.Stock < 0 {
 		return errors.New("VALIDATION:stock must be >= 0")
 	}
+
+	if req.CompareAtPriceAmount != nil && *req.CompareAtPriceAmount <= req.PriceAmount {
+		return errors.New("VALIDATION:compare_at_price_amount must be greater than price_amount")
+	}
+	if req.IsDiscountActive && req.CompareAtPriceAmount == nil {
+		return errors.New("VALIDATION:compare_at_price_amount is required when discount is active")
+	}
+	if req.DiscountStartAt != nil && req.DiscountEndAt != nil && !req.DiscountStartAt.Before(*req.DiscountEndAt) {
+		return errors.New("VALIDATION:discount_start_at must be before discount_end_at")
+	}
 	return nil
 }
 
@@ -65,7 +80,7 @@ func (s *Service) Create(req UpsertProductRequest) (*database.Product, error) {
 	if err := s.db.First(&cat, "id = ?", cid).Error; err != nil {
 		return nil, errors.New("VALIDATION:category not found")
 	}
-	p := &database.Product{CategoryID: &cid, Name: req.Name, Slug: strings.ToLower(strings.TrimSpace(req.Slug)), Description: req.Description, PriceAmount: req.PriceAmount, Stock: req.Stock}
+	p := &database.Product{CategoryID: &cid, Name: req.Name, Slug: strings.ToLower(strings.TrimSpace(req.Slug)), Description: req.Description, PriceAmount: req.PriceAmount, CompareAtPriceAmount: req.CompareAtPriceAmount, IsDiscountActive: req.IsDiscountActive, DiscountStartAt: req.DiscountStartAt, DiscountEndAt: req.DiscountEndAt, Stock: req.Stock}
 	if err := s.db.Transaction(func(tx *gorm.DB) error {
 		if err := tx.Create(p).Error; err != nil {
 			return err
@@ -104,6 +119,10 @@ func (s *Service) Update(id uuid.UUID, req UpsertProductRequest) (*database.Prod
 	p.Slug = strings.ToLower(strings.TrimSpace(req.Slug))
 	p.Description = req.Description
 	p.PriceAmount = req.PriceAmount
+	p.CompareAtPriceAmount = req.CompareAtPriceAmount
+	p.IsDiscountActive = req.IsDiscountActive
+	p.DiscountStartAt = req.DiscountStartAt
+	p.DiscountEndAt = req.DiscountEndAt
 	p.Stock = req.Stock
 	err = s.db.Transaction(func(tx *gorm.DB) error {
 		if err := tx.Save(&p).Error; err != nil {
@@ -213,8 +232,10 @@ func (s *Service) ListPublic(c *gin.Context) (*ProductListResponse, error) {
 		imgMap[im.ProductID] = append(imgMap[im.ProductID], im)
 	}
 	items := make([]gin.H, 0, len(products))
+	now := time.Now()
 	for _, p := range products {
-		items = append(items, gin.H{"id": p.ID, "category_id": p.CategoryID, "name": p.Name, "slug": p.Slug, "description": p.Description, "price_amount": p.PriceAmount, "stock": p.Stock, "is_active": p.IsActive, "images": imgMap[p.ID]})
+		display, pct := discountDisplay(p, now)
+		items = append(items, gin.H{"id": p.ID, "category_id": p.CategoryID, "name": p.Name, "slug": p.Slug, "description": p.Description, "price_amount": p.PriceAmount, "compare_at_price_amount": p.CompareAtPriceAmount, "discount_percentage": pct, "is_discount_displayed": display, "stock": p.Stock, "is_active": p.IsActive, "images": imgMap[p.ID]})
 	}
 	return &ProductListResponse{Items: items, Page: page, Limit: limit, Total: total, TotalPages: int(math.Ceil(float64(total) / float64(limit)))}, nil
 }
@@ -228,7 +249,8 @@ func (s *Service) DetailBySlug(slug string) (gin.H, error) {
 	_ = s.db.First(&cat, "id = ?", p.CategoryID).Error
 	var images []database.ProductImage
 	_ = s.db.Where("product_id = ?", p.ID).Find(&images).Error
-	return gin.H{"id": p.ID, "name": p.Name, "slug": p.Slug, "description": p.Description, "price_amount": p.PriceAmount, "stock": p.Stock, "is_active": p.IsActive, "category": cat, "images": images}, nil
+	display, pct := discountDisplay(p, time.Now())
+	return gin.H{"id": p.ID, "name": p.Name, "slug": p.Slug, "description": p.Description, "price_amount": p.PriceAmount, "compare_at_price_amount": p.CompareAtPriceAmount, "discount_percentage": pct, "is_discount_displayed": display, "stock": p.Stock, "is_active": p.IsActive, "category": cat, "images": images}, nil
 }
 
 func HandleErr(c *gin.Context, err error) {
@@ -243,4 +265,18 @@ func HandleErr(c *gin.Context, err error) {
 	default:
 		response.Fail(c, 500, "Internal server error", "INTERNAL_ERROR", nil)
 	}
+}
+
+func discountDisplay(p database.Product, now time.Time) (bool, float64) {
+	if !p.IsDiscountActive || p.CompareAtPriceAmount == nil || *p.CompareAtPriceAmount <= p.PriceAmount {
+		return false, 0
+	}
+	if p.DiscountStartAt != nil && now.Before(*p.DiscountStartAt) {
+		return false, 0
+	}
+	if p.DiscountEndAt != nil && now.After(*p.DiscountEndAt) {
+		return false, 0
+	}
+	pct := (float64(*p.CompareAtPriceAmount-p.PriceAmount) / float64(*p.CompareAtPriceAmount)) * 100
+	return true, math.Round(pct*100) / 100
 }
