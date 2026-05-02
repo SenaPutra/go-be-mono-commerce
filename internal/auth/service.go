@@ -118,7 +118,7 @@ func RegisterRoutes(rg *gin.RouterGroup, svc *Service) {
 	rg.POST("/customer/register", func(c *gin.Context) {
 		var req RegisterCustomerRequest
 		if err := c.ShouldBindJSON(&req); err != nil {
-			response.Fail(c, http.StatusBadRequest, "Validation error", "VALIDATION_ERROR", []string{"invalid request body"})
+			response.ValidationError(c, []string{"invalid request body"})
 			return
 		}
 		customer, err := svc.RegisterCustomer(req)
@@ -131,7 +131,7 @@ func RegisterRoutes(rg *gin.RouterGroup, svc *Service) {
 	rg.POST("/customer/login", func(c *gin.Context) {
 		var req LoginRequest
 		if err := c.ShouldBindJSON(&req); err != nil {
-			response.Fail(c, http.StatusBadRequest, "Validation error", "VALIDATION_ERROR", []string{"invalid request body"})
+			response.ValidationError(c, []string{"invalid request body"})
 			return
 		}
 		token, customer, err := svc.LoginCustomer(req)
@@ -144,7 +144,7 @@ func RegisterRoutes(rg *gin.RouterGroup, svc *Service) {
 	rg.POST("/admin/login", func(c *gin.Context) {
 		var req LoginRequest
 		if err := c.ShouldBindJSON(&req); err != nil {
-			response.Fail(c, http.StatusBadRequest, "Validation error", "VALIDATION_ERROR", []string{"invalid request body"})
+			response.ValidationError(c, []string{"invalid request body"})
 			return
 		}
 		token, admin, err := svc.LoginAdmin(req)

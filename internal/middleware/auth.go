@@ -1,6 +1,7 @@
 package middleware
 
 import (
+	"errors"
 	"strings"
 
 	"github.com/gin-gonic/gin"
@@ -12,13 +13,13 @@ func AuthJWT(secret string) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		h := c.GetHeader("Authorization")
 		if !strings.HasPrefix(h, "Bearer ") {
-			response.Fail(c, 401, "Unauthorized", "UNAUTHORIZED", nil)
+			response.Error(c, errors.New("UNAUTHORIZED"))
 			c.Abort()
 			return
 		}
 		claims, err := auth.Parse(secret, strings.TrimPrefix(h, "Bearer "))
 		if err != nil {
-			response.Fail(c, 401, "Unauthorized", "UNAUTHORIZED", nil)
+			response.Error(c, errors.New("UNAUTHORIZED"))
 			c.Abort()
 			return
 		}
@@ -36,7 +37,7 @@ func RequireRoles(allowedRoles ...string) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		roleVal, ok := c.Get("role")
 		if !ok || !roleAllowed[roleVal.(string)] {
-			response.Fail(c, 403, "Forbidden", "FORBIDDEN", nil)
+			response.Error(c, errors.New("FORBIDDEN"))
 			c.Abort()
 			return
 		}
