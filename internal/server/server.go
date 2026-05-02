@@ -225,7 +225,7 @@ func registerRoutes(v1 *gin.RouterGroup, cfg config.Config, db *gorm.DB) {
 		response.OK(c, out)
 	})
 
-	paySvc, err := payment.NewService(db, cfg.PaymentProvider)
+	paySvc, err := payment.NewService(db, cfg)
 	if err != nil {
 		panic(err)
 	}

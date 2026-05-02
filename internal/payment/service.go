@@ -6,10 +6,13 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
-	"github.com/google/uuid"
+	"go-be-mono-commerce/internal/config"
 	"go-be-mono-commerce/internal/database"
+	"gorm.io/datatypes"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 const (
@@ -33,45 +36,61 @@ type paymentService struct {
 	providers map[string]PaymentProvider
 }
 
-func NewProviderFromEnv(providerName string) (PaymentProvider, error) {
+func NewProviderFromEnv(cfg config.Config, providerName string) (PaymentProvider, error) {
 	switch strings.ToLower(strings.TrimSpace(providerName)) {
 	case "midtrans":
-		return &MidtransProvider{}, nil
+		return &MidtransProvider{serverKey: cfg.MidtransServerKey, clientKey: cfg.MidtransClientKey, isProduction: cfg.MidtransIsProduction, mockMode: cfg.PaymentMockMode}, nil
 	case "xendit":
-		return &XenditProvider{}, nil
+		return &XenditProvider{secretKey: cfg.XenditSecretKey, callbackToken: cfg.XenditCallbackToken, mockMode: cfg.PaymentMockMode}, nil
 	default:
 		return nil, fmt.Errorf("unsupported payment provider: %s", providerName)
 	}
 }
 
-func NewService(db *gorm.DB, providerName string) (PaymentService, error) {
-	selected, err := NewProviderFromEnv(providerName)
+func NewService(db *gorm.DB, cfg config.Config) (PaymentService, error) {
+	selected, err := NewProviderFromEnv(cfg, cfg.PaymentProvider)
 	if err != nil {
 		return nil, err
 	}
-	return &paymentService{db: db, provider: selected, providers: map[string]PaymentProvider{"midtrans": &MidtransProvider{}, "xendit": &XenditProvider{}}}, nil
+	mid, _ := NewProviderFromEnv(cfg, "midtrans")
+	xen, _ := NewProviderFromEnv(cfg, "xendit")
+	return &paymentService{db: db, provider: selected, providers: map[string]PaymentProvider{"midtrans": mid, "xendit": xen}}, nil
 }
 
 func (s *paymentService) CreatePaymentForOrder(ctx context.Context, orderID string) (*database.Payment, *CreatePaymentResponse, error) {
-	var order database.Order
-	if err := s.db.WithContext(ctx).First(&order, "id = ?", orderID).Error; err != nil {
-		return nil, nil, err
-	}
-	if order.Status == StatusPaid {
-		return nil, nil, errors.New("order already paid")
-	}
-
-	req := CreatePaymentRequest{OrderID: order.ID.String(), OrderNumber: order.OrderNumber, Amount: order.TotalAmount}
-	created, err := s.provider.CreatePayment(ctx, req)
-	if err != nil {
-		return nil, nil, err
-	}
-
-	pay := &database.Payment{OrderID: order.ID, Provider: providerName(s.provider), ProviderReference: created.ProviderReference, Status: created.Status, Amount: order.TotalAmount}
-	if err := s.db.WithContext(ctx).Create(pay).Error; err != nil {
-		return nil, nil, err
-	}
-	return pay, created, nil
+	var pay *database.Payment
+	var created *CreatePaymentResponse
+	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var order database.Order
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&order, "id = ?", orderID).Error; err != nil {
+			return err
+		}
+		if order.Status != "PENDING_PAYMENT" {
+			return errors.New("order is not in pending payment status")
+		}
+		var existing database.Payment
+		err := tx.Where("order_id = ? AND status = ?", order.ID, StatusPending).Order("created_at desc").First(&existing).Error
+		if err == nil {
+			pay = &existing
+			created = &CreatePaymentResponse{ProviderReference: existing.ProviderReference, RedirectURL: existing.RedirectURL, Status: existing.Status}
+			return nil
+		}
+		if !errors.Is(err, gorm.ErrRecordNotFound) {
+			return err
+		}
+		req := CreatePaymentRequest{OrderID: order.ID.String(), OrderNumber: order.OrderNumber, Amount: order.TotalAmount}
+		c, err := s.provider.CreatePayment(ctx, req)
+		if err != nil {
+			return err
+		}
+		pay = &database.Payment{OrderID: order.ID, Provider: providerName(s.provider), ProviderReference: c.ProviderReference, Status: StatusPending, Amount: order.TotalAmount, RedirectURL: c.RedirectURL}
+		if err := tx.Create(pay).Error; err != nil {
+			return err
+		}
+		created = c
+		return nil
+	})
+	return pay, created, err
 }
 
 func (s *paymentService) GetPaymentStatus(ctx context.Context, paymentID string) (*PaymentStatusResponse, error) {
@@ -94,36 +113,49 @@ func (s *paymentService) HandleWebhook(ctx context.Context, provider string, hea
 	if err != nil {
 		return err
 	}
-	meta, _ := json.Marshal(map[string]any{"provider": provider, "event": evt, "headers": headers})
+	now := time.Now().UTC()
 
 	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		event := database.PaymentWebhookEvent{Provider: strings.ToLower(provider), EventID: evt.EventID, ProviderReference: evt.ProviderReference, Status: evt.Status, RawPayload: datatypes.JSON(payload)}
+		if err := tx.Where("provider = ? AND event_id = ?", event.Provider, event.EventID).FirstOrCreate(&event).Error; err != nil {
+			return err
+		}
+		if event.ProcessedAt != nil {
+			return s.writeAudit(tx, "PAYMENT_WEBHOOK_DUPLICATE", provider, evt, headers, payload)
+		}
+
 		var pay database.Payment
-		if err := tx.Clauses().First(&pay, "provider = ? AND provider_reference = ?", strings.ToLower(provider), evt.ProviderReference).Error; err != nil {
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&pay, "provider = ? AND provider_reference = ?", strings.ToLower(provider), evt.ProviderReference).Error; err != nil {
 			return err
 		}
 		nextStatus, changed := applyWebhookStatus(pay.Status, evt.Status)
-		if !changed {
-			return tx.Create(&database.AuditLog{Action: "PAYMENT_WEBHOOK_DUPLICATE", ResourceType: "payment", ResourceID: pay.ID.String(), Metadata: string(meta)}).Error
-		}
-		if err := tx.Model(&pay).Update("status", nextStatus).Error; err != nil {
-			return err
-		}
-		var newOrderStatus string
-		switch nextStatus {
-		case StatusPaid:
-			newOrderStatus = StatusPaid
-		case StatusExpired:
-			newOrderStatus = StatusExpired
-		case StatusFailed:
-			newOrderStatus = StatusFailed
-		}
-		if newOrderStatus != "" {
-			if err := tx.Model(&database.Order{}).Where("id = ?", pay.OrderID).Update("status", newOrderStatus).Error; err != nil {
+		if changed {
+			updates := map[string]any{"status": nextStatus}
+			if nextStatus == StatusPaid && pay.PaidAt == nil {
+				updates["paid_at"] = now
+			}
+			if err := tx.Model(&pay).Updates(updates).Error; err != nil {
 				return err
 			}
+			if nextStatus == StatusPaid || nextStatus == StatusExpired || nextStatus == StatusFailed {
+				if err := tx.Model(&database.Order{}).Where("id = ?", pay.OrderID).Updates(map[string]any{"status": nextStatus}).Error; err != nil {
+					return err
+				}
+			}
 		}
-		return tx.Create(&database.AuditLog{Action: "PAYMENT_WEBHOOK", ResourceType: "payment", ResourceID: pay.ID.String(), Metadata: string(meta)}).Error
+		if err := tx.Model(&event).Update("processed_at", now).Error; err != nil {
+			return err
+		}
+		if !changed {
+			return s.writeAudit(tx, "PAYMENT_WEBHOOK_DUPLICATE", provider, evt, headers, payload)
+		}
+		return s.writeAudit(tx, "PAYMENT_WEBHOOK", provider, evt, headers, payload)
 	})
+}
+
+func (s *paymentService) writeAudit(tx *gorm.DB, action, provider string, evt *PaymentWebhookEvent, headers map[string]string, payload []byte) error {
+	meta, _ := json.Marshal(map[string]any{"provider": provider, "event": evt, "headers": headers, "payload": json.RawMessage(payload)})
+	return tx.Create(&database.AuditLog{ActorType: "SYSTEM", Action: action, ResourceType: "payment_webhook", Metadata: datatypes.JSON(meta)}).Error
 }
 
 func providerName(p PaymentProvider) string {
@@ -137,9 +169,10 @@ func providerName(p PaymentProvider) string {
 	}
 }
 
-func ParseUUID(v string) (uuid.UUID, error) { return uuid.Parse(v) }
-
 func applyWebhookStatus(current, incoming string) (string, bool) {
+	if current == StatusPaid && incoming != StatusPaid {
+		return current, false
+	}
 	if current == incoming {
 		return current, false
 	}
