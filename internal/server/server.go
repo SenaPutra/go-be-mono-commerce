@@ -8,6 +8,7 @@ import (
 	"go-be-mono-commerce/internal/config"
 	"go-be-mono-commerce/internal/database"
 	"go-be-mono-commerce/internal/middleware"
+	"go-be-mono-commerce/internal/order"
 	"go-be-mono-commerce/internal/payment"
 	"go-be-mono-commerce/internal/product"
 	"go-be-mono-commerce/pkg/logger"
@@ -170,10 +171,59 @@ func registerRoutes(v1 *gin.RouterGroup, cfg config.Config, db *gorm.DB) {
 		}
 		response.OK(c, gin.H{"cleared": true})
 	})
+	ordSvc := order.NewService(db)
 	ord := v1.Group("/orders", middleware.AuthJWT(cfg.JWTSecret), middleware.RequireRoles(auth.RoleCustomer))
-	ord.POST("/checkout", ok)
-	ord.GET("", ok)
-	ord.GET(":id", ok)
+	ord.POST("/checkout", func(c *gin.Context) {
+		uid, err := auth.ParseUUID(c.GetString("user_id"))
+		if err != nil {
+			response.Fail(c, 401, "Unauthorized", "UNAUTHORIZED", nil)
+			return
+		}
+		var req order.CheckoutRequest
+		if c.ShouldBindJSON(&req) != nil {
+			response.Fail(c, 400, "Validation error", "VALIDATION_ERROR", []string{"invalid request body"})
+			return
+		}
+		out, err := ordSvc.Checkout(uid, req)
+		if err != nil {
+			code, msg, ec, de := order.HandleErr(err)
+			response.Fail(c, code, msg, ec, de)
+			return
+		}
+		response.Created(c, out)
+	})
+	ord.GET("", func(c *gin.Context) {
+		uid, err := auth.ParseUUID(c.GetString("user_id"))
+		if err != nil {
+			response.Fail(c, 401, "Unauthorized", "UNAUTHORIZED", nil)
+			return
+		}
+		out, err := ordSvc.ListCustomerOrders(uid)
+		if err != nil {
+			response.Fail(c, 500, "Internal server error", "INTERNAL_ERROR", nil)
+			return
+		}
+		response.OK(c, gin.H{"items": out})
+	})
+	ord.GET(":id", func(c *gin.Context) {
+		uid, err := auth.ParseUUID(c.GetString("user_id"))
+		if err != nil {
+			response.Fail(c, 401, "Unauthorized", "UNAUTHORIZED", nil)
+			return
+		}
+		oid, err := auth.ParseUUID(c.Param("id"))
+		if err != nil {
+			response.Fail(c, 400, "Validation error", "VALIDATION_ERROR", []string{"invalid id"})
+			return
+		}
+		out, err := ordSvc.GetCustomerOrder(uid, oid)
+		if err != nil {
+			code, msg, ec, de := order.HandleErr(err)
+			response.Fail(c, code, msg, ec, de)
+			return
+		}
+		response.OK(c, out)
+	})
 
 	paySvc, err := payment.NewService(db, cfg.PaymentProvider)
 	if err != nil {
@@ -319,9 +369,49 @@ func registerRoutes(v1 *gin.RouterGroup, cfg config.Config, db *gorm.DB) {
 		}
 		response.OK(c, gin.H{"stock": req.Stock})
 	})
-	admin.GET("/orders", ok)
-	admin.GET("/orders/:id", ok)
-	admin.PATCH("/orders/:id/status", ok)
+	admin.GET("/orders", func(c *gin.Context) {
+		out, err := ordSvc.ListAdminOrders()
+		if err != nil {
+			response.Fail(c, 500, "Internal server error", "INTERNAL_ERROR", nil)
+			return
+		}
+		response.OK(c, gin.H{"items": out})
+	})
+	admin.GET("/orders/:id", func(c *gin.Context) {
+		oid, err := auth.ParseUUID(c.Param("id"))
+		if err != nil {
+			response.Fail(c, 400, "Validation error", "VALIDATION_ERROR", []string{"invalid id"})
+			return
+		}
+		out, err := ordSvc.GetAdminOrder(oid)
+		if err != nil {
+			code, msg, ec, de := order.HandleErr(err)
+			response.Fail(c, code, msg, ec, de)
+			return
+		}
+		response.OK(c, out)
+	})
+	admin.PATCH("/orders/:id/status", func(c *gin.Context) {
+		oid, err := auth.ParseUUID(c.Param("id"))
+		if err != nil {
+			response.Fail(c, 400, "Validation error", "VALIDATION_ERROR", []string{"invalid id"})
+			return
+		}
+		var req struct {
+			Status string `json:"status"`
+		}
+		if c.ShouldBindJSON(&req) != nil {
+			response.Fail(c, 400, "Validation error", "VALIDATION_ERROR", []string{"invalid request body"})
+			return
+		}
+		out, err := ordSvc.UpdateOrderStatus(oid, req.Status)
+		if err != nil {
+			code, msg, ec, de := order.HandleErr(err)
+			response.Fail(c, code, msg, ec, de)
+			return
+		}
+		response.OK(c, out)
+	})
 	admin.POST("/uploads/images", ok)
 	admin.GET("/reports/orders", ok)
 	admin.GET("/reports/sales", ok)
