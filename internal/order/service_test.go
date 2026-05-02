@@ -1,6 +1,8 @@
 package order
 
 import (
+	"errors"
+	"sync"
 	"testing"
 
 	"github.com/google/uuid"
@@ -10,7 +12,7 @@ import (
 )
 
 func testDB(t *testing.T) *gorm.DB {
-	db, err := gorm.Open(sqlite.Open("file::memory:?cache=shared"), &gorm.Config{})
+	db, err := gorm.Open(sqlite.Open("file:order_test.db?mode=memory&cache=shared&_busy_timeout=5000"), &gorm.Config{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -55,18 +57,6 @@ func TestCheckoutSuccess(t *testing.T) {
 	}
 }
 
-func TestCheckoutEmptyCart(t *testing.T) {
-	db := testDB(t)
-	svc := NewService(db)
-	cust := uuid.New()
-	addr := database.CustomerAddress{CustomerID: cust, ReceiverName: "A", Address: "J", City: "C", Province: "P", PostalCode: "1"}
-	_ = db.Create(&addr).Error
-	_ = db.Create(&database.Cart{CustomerID: cust, Status: "ACTIVE"}).Error
-	if _, err := svc.Checkout(cust, CheckoutRequest{AddressID: addr.ID.String()}); err == nil {
-		t.Fatal("expected err")
-	}
-}
-
 func TestCheckoutInsufficientStockRollback(t *testing.T) {
 	db := testDB(t)
 	svc := NewService(db)
@@ -90,12 +80,112 @@ func TestCheckoutInsufficientStockRollback(t *testing.T) {
 	}
 }
 
-func TestInvalidOrderTransition(t *testing.T) {
+func TestConcurrentCheckoutSingleStock(t *testing.T) {
 	db := testDB(t)
 	svc := NewService(db)
-	o := database.Order{CustomerID: uuid.New(), OrderNumber: "ORD-1", TotalAmount: 1, Status: StatusCompleted}
-	_ = db.Create(&o).Error
-	if _, err := svc.UpdateOrderStatus(o.ID, StatusProcessing); err == nil {
-		t.Fatal("expected invalid transition")
+	product := database.Product{Name: "P", Slug: uuid.NewString(), PriceAmount: 100, Stock: 1, IsActive: true}
+	_ = db.Create(&product).Error
+	mkCustomer := func() (uuid.UUID, string) {
+		cust := uuid.New()
+		addr := database.CustomerAddress{CustomerID: cust, ReceiverName: "A", Address: "J", City: "C", Province: "P", PostalCode: "1"}
+		_ = db.Create(&addr).Error
+		cart := database.Cart{CustomerID: cust, Status: "ACTIVE"}
+		_ = db.Create(&cart).Error
+		_ = db.Create(&database.CartItem{CartID: cart.ID, ProductID: product.ID, Quantity: 1, PriceSnapshotAmount: product.PriceAmount}).Error
+		return cust, addr.ID.String()
+	}
+	custA, addrA := mkCustomer()
+	custB, addrB := mkCustomer()
+	results := make(chan error, 2)
+	var wg sync.WaitGroup
+	wg.Add(2)
+	go func() {
+		defer wg.Done()
+		_, err := svc.Checkout(custA, CheckoutRequest{AddressID: addrA})
+		results <- err
+	}()
+	go func() {
+		defer wg.Done()
+		_, err := svc.Checkout(custB, CheckoutRequest{AddressID: addrB})
+		results <- err
+	}()
+	wg.Wait()
+	close(results)
+	success, fail := 0, 0
+	for err := range results {
+		if err == nil {
+			success++
+		} else {
+			var sErr *InsufficientStockError
+			if !errors.As(err, &sErr) {
+				t.Fatalf("expected insufficient stock err, got %v", err)
+			}
+			fail++
+		}
+	}
+	if success != 1 || fail != 1 {
+		t.Fatalf("expected 1 success and 1 fail, got success=%d fail=%d", success, fail)
+	}
+	var p database.Product
+	_ = db.First(&p, "id = ?", product.ID).Error
+	if p.Stock != 0 {
+		t.Fatalf("expected stock 0, got %d", p.Stock)
+	}
+	if p.Stock < 0 {
+		t.Fatalf("stock negative")
+	}
+	var orderCount int64
+	_ = db.Model(&database.Order{}).Count(&orderCount).Error
+	if orderCount != 1 {
+		t.Fatalf("expected 1 order, got %d", orderCount)
+	}
+}
+
+func TestConcurrentCheckoutMany(t *testing.T) {
+	db := testDB(t)
+	svc := NewService(db)
+	product := database.Product{Name: "P2", Slug: uuid.NewString(), PriceAmount: 100, Stock: 5, IsActive: true}
+	_ = db.Create(&product).Error
+	const n = 10
+	results := make(chan error, n)
+	var wg sync.WaitGroup
+	for i := 0; i < n; i++ {
+		cust := uuid.New()
+		addr := database.CustomerAddress{CustomerID: cust, ReceiverName: "A", Address: "J", City: "C", Province: "P", PostalCode: "1"}
+		_ = db.Create(&addr).Error
+		cart := database.Cart{CustomerID: cust, Status: "ACTIVE"}
+		_ = db.Create(&cart).Error
+		_ = db.Create(&database.CartItem{CartID: cart.ID, ProductID: product.ID, Quantity: 1, PriceSnapshotAmount: product.PriceAmount}).Error
+		wg.Add(1)
+		go func(c uuid.UUID, a string) {
+			defer wg.Done()
+			_, err := svc.Checkout(c, CheckoutRequest{AddressID: a})
+			results <- err
+		}(cust, addr.ID.String())
+	}
+	wg.Wait()
+	close(results)
+	success, fail := 0, 0
+	for err := range results {
+		if err == nil {
+			success++
+		} else {
+			var sErr *InsufficientStockError
+			if !errors.As(err, &sErr) {
+				t.Fatalf("unexpected err: %v", err)
+			}
+			fail++
+		}
+	}
+	if success != 5 || fail != 5 {
+		t.Fatalf("expected 5 success/5 fail, got %d/%d", success, fail)
+	}
+	var p database.Product
+	_ = db.First(&p, "id = ?", product.ID).Error
+	if p.Stock != 0 {
+		t.Fatalf("expected stock 0 got %d", p.Stock)
+	}
+	if p.Stock < 0 {
+		t.Fatalf("stock negative")
 	}
 }

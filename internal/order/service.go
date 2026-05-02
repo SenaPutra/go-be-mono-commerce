@@ -10,7 +10,6 @@ import (
 	"github.com/google/uuid"
 	"go-be-mono-commerce/internal/database"
 	"gorm.io/gorm"
-	"gorm.io/gorm/clause"
 )
 
 const (
@@ -31,6 +30,18 @@ func NewService(db *gorm.DB) *Service { return &Service{db: db} }
 type CheckoutRequest struct {
 	AddressID string `json:"address_id"`
 	Notes     string `json:"notes"`
+}
+
+type InsufficientStockDetail struct {
+	ProductID         uuid.UUID `json:"product_id"`
+	RequestedQuantity int       `json:"requested_quantity"`
+	AvailableStock    int       `json:"available_stock"`
+}
+
+type InsufficientStockError struct{ Detail InsufficientStockDetail }
+
+func (e *InsufficientStockError) Error() string {
+	return fmt.Sprintf("INSUFFICIENT_STOCK:product %s stock is %d, requested %d", e.Detail.ProductID, e.Detail.AvailableStock, e.Detail.RequestedQuantity)
 }
 
 func (s *Service) Checkout(customerID uuid.UUID, req CheckoutRequest) (*database.Order, error) {
@@ -55,44 +66,44 @@ func (s *Service) Checkout(customerID uuid.UUID, req CheckoutRequest) (*database
 		if len(items) == 0 {
 			return errors.New("VALIDATION:cart is empty")
 		}
-		productIDs := make([]uuid.UUID, 0, len(items))
-		for _, it := range items {
-			productIDs = append(productIDs, it.ProductID)
-		}
-		var products []database.Product
-		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id in ?", productIDs).Find(&products).Error; err != nil {
-			return err
-		}
-		pmap := map[uuid.UUID]database.Product{}
-		for _, p := range products {
-			pmap[p.ID] = p
-		}
+
+		productSnapshots := make(map[uuid.UUID]database.Product, len(items))
 		var total int64
 		for _, it := range items {
-			p, ok := pmap[it.ProductID]
-			if !ok {
+			if it.Quantity <= 0 {
+				return errors.New("VALIDATION:cart item quantity must be > 0")
+			}
+			var product database.Product
+			if err := tx.Where("id = ?", it.ProductID).First(&product).Error; err != nil {
 				return errors.New("NOT_FOUND:product")
 			}
-			if !p.IsActive {
-				return fmt.Errorf("VALIDATION:product %s is inactive", p.ID.String())
+			if !product.IsActive {
+				return errors.New("VALIDATION:product is inactive")
 			}
-			if p.Stock < it.Quantity {
-				return fmt.Errorf("VALIDATION:insufficient stock for product %s", p.ID.String())
+			res := tx.Model(&database.Product{}).
+				Where("id = ? AND stock >= ? AND deleted_at IS NULL AND is_active = ?", product.ID, it.Quantity, true).
+				Update("stock", gorm.Expr("stock - ?", it.Quantity))
+			if res.Error != nil {
+				return res.Error
 			}
+			if res.RowsAffected == 0 {
+				var latest database.Product
+				if err := tx.Unscoped().Select("id", "stock").Where("id = ?", product.ID).First(&latest).Error; err != nil {
+					return &InsufficientStockError{Detail: InsufficientStockDetail{ProductID: product.ID, RequestedQuantity: it.Quantity, AvailableStock: 0}}
+				}
+				return &InsufficientStockError{Detail: InsufficientStockDetail{ProductID: product.ID, RequestedQuantity: it.Quantity, AvailableStock: latest.Stock}}
+			}
+			productSnapshots[product.ID] = product
 			sub := int64(it.Quantity) * it.PriceSnapshotAmount
 			total += sub
 		}
+
 		order := database.Order{CustomerID: customerID, OrderNumber: generateOrderNumber(), TotalAmount: total, Status: StatusPendingPayment}
 		if err := tx.Create(&order).Error; err != nil {
 			return err
 		}
 		for _, it := range items {
-			p := pmap[it.ProductID]
-			sub := int64(it.Quantity) * it.PriceSnapshotAmount
-			if err := tx.Create(&database.OrderItem{OrderID: order.ID, ProductID: p.ID, ProductNameSnapshot: p.Name, Quantity: it.Quantity, PriceAmount: it.PriceSnapshotAmount, SubtotalAmount: sub}).Error; err != nil {
-				return err
-			}
-			if err := tx.Model(&database.Product{}).Where("id = ?", p.ID).Update("stock", gorm.Expr("stock - ?", it.Quantity)).Error; err != nil {
+			if err := tx.Create(&database.OrderItem{OrderID: order.ID, ProductID: it.ProductID, ProductNameSnapshot: productSnapshots[it.ProductID].Name, Quantity: it.Quantity, PriceAmount: it.PriceSnapshotAmount, SubtotalAmount: int64(it.Quantity) * it.PriceSnapshotAmount}).Error; err != nil {
 				return err
 			}
 		}
@@ -121,7 +132,6 @@ func (s *Service) ListCustomerOrders(customerID uuid.UUID) ([]database.Order, er
 	var orders []database.Order
 	return orders, s.db.Where("customer_id = ?", customerID).Order("created_at desc").Find(&orders).Error
 }
-
 func (s *Service) GetCustomerOrder(customerID, orderID uuid.UUID) (*database.Order, error) {
 	var o database.Order
 	if err := s.db.Where("id = ? and customer_id = ?", orderID, customerID).First(&o).Error; err != nil {
@@ -163,6 +173,10 @@ func (s *Service) UpdateOrderStatus(orderID uuid.UUID, newStatus string) (*datab
 }
 
 func HandleErr(err error) (int, string, string, []string) {
+	var stockErr *InsufficientStockError
+	if errors.As(err, &stockErr) {
+		return 409, "Insufficient stock", "INSUFFICIENT_STOCK", []string{stockErr.Error()}
+	}
 	m := err.Error()
 	switch {
 	case strings.HasPrefix(m, "VALIDATION:"):
