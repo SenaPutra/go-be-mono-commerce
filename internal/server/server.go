@@ -10,20 +10,21 @@ import (
 	"go-be-mono-commerce/internal/payment"
 	"go-be-mono-commerce/pkg/logger"
 	"go-be-mono-commerce/pkg/response"
+	"gorm.io/gorm"
 )
 
-type Server struct { engine *gin.Engine; cfg config.Config }
+type Server struct { engine *gin.Engine; cfg config.Config; db *gorm.DB }
 
 func New(cfg config.Config) (*Server, error) {
 	log, err := logger.New(); if err != nil { return nil, err }
-	_, err = database.New(cfg); if err != nil { return nil, err }
+	db, err := database.New(cfg); if err != nil { return nil, err }
 	r := gin.New(); r.Use(gin.Recovery(), middleware.CORS(cfg.CorsAllowOrigin), middleware.RequestLogger(log))
 	v1 := r.Group("/api/v1")
-	registerRoutes(v1, cfg)
-	return &Server{engine: r, cfg: cfg}, nil
+	registerRoutes(v1, cfg, db)
+	return &Server{engine: r, cfg: cfg, db: db}, nil
 }
 
-func registerRoutes(v1 *gin.RouterGroup, cfg config.Config) {
+func registerRoutes(v1 *gin.RouterGroup, cfg config.Config, db *gorm.DB) {
 	v1.GET("/products", func(c *gin.Context){ response.OK(c, gin.H{"items": []any{}})})
 	v1.GET("/products/:slug", func(c *gin.Context){ response.OK(c, gin.H{"slug": c.Param("slug")})})
 	v1.GET("/categories", func(c *gin.Context){ response.OK(c, gin.H{"items": []any{}})})
@@ -40,8 +41,12 @@ func registerRoutes(v1 *gin.RouterGroup, cfg config.Config) {
 	cust.GET("", ok); cust.PUT("", ok); cust.GET("/addresses", ok); cust.POST("/addresses", ok); cust.PUT("/addresses/:id", ok); cust.DELETE("/addresses/:id", ok); cust.GET("/orders", ok); cust.GET("/orders/:id", ok)
 	cart := v1.Group("/cart", middleware.JWT(cfg.JWTSecret, "customer")); cart.GET("", ok); cart.POST("/items", ok); cart.PUT("/items/:id", ok); cart.DELETE("/items/:id", ok); cart.DELETE("", ok)
 	ord := v1.Group("/orders", middleware.JWT(cfg.JWTSecret, "customer")); ord.POST("/checkout", ok); ord.GET("", ok); ord.GET(":id", ok)
-	pay := v1.Group("/payments", middleware.JWT(cfg.JWTSecret, "customer")); pay.POST("/orders/:order_id/pay", ok); pay.GET(":id/status", ok)
-	v1.POST("/webhooks/payments/midtrans", ok); v1.POST("/webhooks/payments/xendit", ok)
+
+	paySvc, err := payment.NewService(db, cfg.PaymentProvider)
+	if err != nil { panic(err) }
+	payHandler := payment.NewHandler(paySvc)
+	pay := v1.Group("/payments", middleware.JWT(cfg.JWTSecret, "customer")); pay.POST("/orders/:order_id/pay", payHandler.CreatePayment); pay.GET(":id/status", payHandler.GetPaymentStatus)
+	v1.POST("/webhooks/payments/midtrans", payHandler.MidtransWebhook); v1.POST("/webhooks/payments/xendit", payHandler.XenditWebhook)
 
 	admin := v1.Group("/admin", middleware.JWT(cfg.JWTSecret, "admin"))
 	admin.GET("/customers", ok); admin.GET("/customers/:id", ok); admin.GET("/customers/:id/orders", ok)
@@ -51,8 +56,6 @@ func registerRoutes(v1 *gin.RouterGroup, cfg config.Config) {
 	admin.POST("/uploads/images", ok)
 	admin.GET("/reports/orders", ok); admin.GET("/reports/sales", ok); admin.GET("/reports/products", ok); admin.GET("/reports/payments", ok)
 	admin.GET("/audit-logs", ok)
-
-	_ = payment.PaymentProvider(&payment.MidtransProvider{})
 }
 
 func ok(c *gin.Context) { response.OK(c, gin.H{"todo": true}) }
