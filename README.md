@@ -1,50 +1,479 @@
-# Go E-Commerce Modular Monolith Skeleton
+# Go E-Commerce Modular Monolith (MVP Backend)
 
-## Stack
-Go 1.22+, Gin, GORM, PostgreSQL, JWT, bcrypt, Zap.
+A modular monolith backend for a standard e-commerce platform. It provides:
+- **Storefront APIs** for customers (register/login, browse products, cart, checkout, payments).
+- **Admin Backoffice APIs** for catalog management, orders, customer visibility, reports, and audit logs.
+- **Payment Gateway Adapter Layer** via a provider abstraction (Midtrans/Xendit implementations).
 
-## Run locally
-1. Copy env: `cp .env.example .env`
-2. Start postgres: `docker compose -f deployments/docker-compose.yml up -d postgres`
-3. Run tests: `go test ./...`
-4. Run API: `go run ./cmd/api`
-5. Health check: `curl -s localhost:8080/healthz`
+---
 
-## Migrations
-SQL files are in `migrations/` (intended for golang-migrate/goose integration).
+## 1) Project Overview
 
-Run in order on an empty PostgreSQL database:
+This project is an MVP commerce backend that supports end-to-end ordering flow:
+1. Customer registers and logs in.
+2. Admin logs in and manages category/product catalog.
+3. Customer adds items to cart and checks out.
+4. Customer creates payment for an order.
+5. Payment webhook updates payment and order status.
+
+It is intentionally kept practical for MVP delivery while preserving clean module boundaries.
+
+---
+
+## 2) Architecture Summary
+
+### Modular monolith
+- Single deployable Go service.
+- Domain modules under `internal/*` (auth, customer, category, product, cart, order, payment, report, audit, etc.).
+- Repository → Service → Handler layering where applicable.
+
+### User storefront API
+- Public endpoints: product/category listing.
+- Authenticated customer endpoints: profile, address, cart, checkout, payment, order history.
+
+### Admin backoffice API
+- Admin-authenticated endpoints for:
+  - category/product CRUD
+  - order list/detail/status update
+  - customer visibility
+  - reports and audit logs
+
+### Payment gateway adapter
+- Uses `PaymentProvider` abstraction.
+- Provider selected via `PAYMENT_PROVIDER` environment variable.
+- Midtrans and Xendit providers exposed through webhook endpoints.
+
+---
+
+## 3) Tech Stack
+
+- **Language:** Go (1.22+)
+- **Web:** Gin
+- **ORM/DB:** GORM + PostgreSQL
+- **Auth:** JWT
+- **Password Hashing:** bcrypt
+- **Logging:** Zap
+- **Container/Local DB:** Docker Compose
+
+---
+
+## 4) Prerequisites
+
+Make sure these are installed:
+- Go 1.22+
+- Docker + Docker Compose plugin
+- `curl`
+- Optional but recommended: `jq`
+
+On Debian/Ubuntu (optional):
+
+```bash
+sudo apt-get update
+sudo apt-get install -y jq curl
+```
+
+---
+
+## 5) Environment Variables
+
+1. Copy sample environment:
+
+```bash
+cp .env.example .env
+```
+
+2. Review/edit `.env` values (typical fields):
+- `APP_ENV`
+- `APP_PORT`
+- `DB_HOST`, `DB_PORT`, `DB_USER`, `DB_PASSWORD`, `DB_NAME`, `DB_SSLMODE`
+- `JWT_SECRET`
+- `PAYMENT_PROVIDER` (`midtrans` or `xendit`)
+- Provider keys/secrets if needed by your integration
+
+> Do not commit real secrets. Keep secrets only in local `.env` or secret manager.
+
+---
+
+## 6) Run PostgreSQL with Docker Compose
+
+Start PostgreSQL:
+
+```bash
+docker compose -f deployments/docker-compose.yml up -d postgres
+```
+
+Check status:
+
+```bash
+docker compose -f deployments/docker-compose.yml ps
+```
+
+Stop services:
+
+```bash
+docker compose -f deployments/docker-compose.yml down
+```
+
+---
+
+## 7) Run Migrations
+
+SQL migrations are located in `migrations/`.
+
+Run in this order for empty DB:
 1. `000001_init.up.sql`
 2. `000003_ecommerce_schema.up.sql`
 3. `000002_seed_admin.up.sql`
 
-The admin seed inserts a default super admin account:
-- Email: `admin@example.com`
-- Password: `admin12345`
-- Role: `SUPER_ADMIN`
-- Password storage uses PostgreSQL `pgcrypto` bcrypt hash via `crypt(..., gen_salt('bf'))`.
+If you use `psql` directly (example):
 
-## API
-Base URL: `http://localhost:8080/api/v1`
+```bash
+export PGPASSWORD='postgres'
+psql -h localhost -p 5432 -U postgres -d commerce -f migrations/000001_init.up.sql
+psql -h localhost -p 5432 -U postgres -d commerce -f migrations/000003_ecommerce_schema.up.sql
+psql -h localhost -p 5432 -U postgres -d commerce -f migrations/000002_seed_admin.up.sql
+```
 
-### Example curl
-- Register customer: `curl -X POST localhost:8080/api/v1/auth/customer/register -H 'Content-Type: application/json' -d '{"name":"Sena","email":"sena@example.com","phone":"08123456789","password":"secret123"}'`
-- Login customer: `curl -X POST localhost:8080/api/v1/auth/customer/login -H 'Content-Type: application/json' -d '{"email":"sena@example.com","password":"secret123"}'`
-- Login admin: `curl -X POST localhost:8080/api/v1/auth/admin/login -H 'Content-Type: application/json' -d '{"email":"admin@example.com","password":"admin12345"}'`
-- Create category: `curl -X POST localhost:8080/api/v1/admin/categories -H 'Authorization: Bearer <admin_token>' -H 'Content-Type: application/json' -d '{"name":"Speaker","slug":"speaker"}'`
-- Create product: `curl -X POST localhost:8080/api/v1/admin/products -H 'Authorization: Bearer <admin_token>' -H 'Content-Type: application/json' -d '{"category_id":"<category_uuid>","name":"Bluetooth Speaker X1","slug":"bluetooth-speaker-x1","description":"Portable speaker","price_amount":250000,"stock":100,"images":[{"image_url":"https://example.com/speaker.jpg","is_primary":true}]}'`
-- List products: `curl -X GET 'localhost:8080/api/v1/products?page=1&limit=10&category_slug=speaker&search=speaker&min_price=100000&max_price=500000&sort_by=price_amount&sort_order=asc'`
-- Product detail by slug: `curl -X GET localhost:8080/api/v1/products/bluetooth-speaker-x1`
-- Publish product: `curl -X PATCH localhost:8080/api/v1/admin/products/<product_id>/publish -H 'Authorization: Bearer <admin_token>'`
-- Unpublish product: `curl -X PATCH localhost:8080/api/v1/admin/products/<product_id>/unpublish -H 'Authorization: Bearer <admin_token>'`
-- Update stock: `curl -X PUT localhost:8080/api/v1/admin/products/<product_id>/stock -H 'Authorization: Bearer <admin_token>' -H 'Content-Type: application/json' -d '{"stock":120}'`
-- Add to cart: `curl -X POST localhost:8080/api/v1/cart/items -H 'Authorization: Bearer <customer_token>'`
-- Checkout: `curl -X POST localhost:8080/api/v1/orders/checkout -H 'Authorization: Bearer <customer_token>'`
-- Create payment: `curl -X POST localhost:8080/api/v1/payments/orders/<order_id>/pay -H 'Authorization: Bearer <customer_token>'`
-- Simulate webhook: `curl -X POST localhost:8080/api/v1/webhooks/payments/midtrans -d '{}'`
+> Adjust host/port/user/db/password to your `.env`.
 
-## Notes
-- Payment providers are abstractions with Midtrans/Xendit skeleton implementations.
-- Replace TODO placeholders with real gateway calls and signature validation.
+---
 
-- Auth me: `curl -X GET localhost:8080/api/v1/auth/me -H 'Authorization: Bearer <token>'`
+## 8) Start API
+
+```bash
+go run ./cmd/api
+```
+
+Default local base URL used in examples:
+
+```bash
+export BASE_URL="http://localhost:8080"
+export API_V1="$BASE_URL/api/v1"
+```
+
+---
+
+## 9) Default Seeded Admin
+
+After running seed migration, default admin account is:
+- **Email:** `admin@example.com`
+- **Password:** `admin12345`
+- **Role:** `SUPER_ADMIN`
+
+Use this only for local development. Change credentials for any non-local environment.
+
+---
+
+## 10) Full End-to-End Curl Flow (Copy-Paste Friendly)
+
+> Tips:
+> - Commands below use `jq` for easy token/ID extraction.
+> - If you do not use `jq`, copy token/IDs manually from JSON response and set env vars yourself.
+
+### 10.1 Health check
+
+```bash
+curl -s "$BASE_URL/healthz" | jq
+```
+
+### 10.2 Register customer
+
+```bash
+curl -s -X POST "$API_V1/auth/customer/register" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "Sena Arya",
+    "email": "sena.arya@example.com",
+    "phone": "+6281234567890",
+    "password": "Secret123!"
+  }' | jq
+```
+
+### 10.3 Login customer and export token
+
+```bash
+CUSTOMER_LOGIN_RESPONSE=$(curl -s -X POST "$API_V1/auth/customer/login" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "email": "sena.arya@example.com",
+    "password": "Secret123!"
+  }')
+
+echo "$CUSTOMER_LOGIN_RESPONSE" | jq
+
+# With jq:
+export CUSTOMER_TOKEN=$(echo "$CUSTOMER_LOGIN_RESPONSE" | jq -r '.data.token')
+
+# Manual alternative (without jq):
+# 1) Copy token from response JSON
+# 2) export CUSTOMER_TOKEN='<paste_customer_token_here>'
+```
+
+### 10.4 Login admin and export token
+
+```bash
+ADMIN_LOGIN_RESPONSE=$(curl -s -X POST "$API_V1/auth/admin/login" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "email": "admin@example.com",
+    "password": "admin12345"
+  }')
+
+echo "$ADMIN_LOGIN_RESPONSE" | jq
+
+export ADMIN_TOKEN=$(echo "$ADMIN_LOGIN_RESPONSE" | jq -r '.data.token')
+
+# Manual alternative:
+# export ADMIN_TOKEN='<paste_admin_token_here>'
+```
+
+### 10.5 Create category
+
+```bash
+CREATE_CATEGORY_RESPONSE=$(curl -s -X POST "$API_V1/admin/categories" \
+  -H "Authorization: Bearer $ADMIN_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "Audio",
+    "slug": "audio"
+  }')
+
+echo "$CREATE_CATEGORY_RESPONSE" | jq
+
+export CATEGORY_ID=$(echo "$CREATE_CATEGORY_RESPONSE" | jq -r '.data.id')
+```
+
+### 10.6 Create product
+
+```bash
+CREATE_PRODUCT_RESPONSE=$(curl -s -X POST "$API_V1/admin/products" \
+  -H "Authorization: Bearer $ADMIN_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d "{
+    \"category_id\": \"$CATEGORY_ID\",
+    \"name\": \"Bluetooth Speaker X1\",
+    \"slug\": \"bluetooth-speaker-x1\",
+    \"description\": \"Portable 20W speaker with Bluetooth 5.3\",
+    \"price_amount\": 349000,
+    \"stock\": 50,
+    \"images\": [
+      {
+        \"image_url\": \"https://images.example.com/products/bluetooth-speaker-x1-main.jpg\",
+        \"is_primary\": true
+      }
+    ]
+  }")
+
+echo "$CREATE_PRODUCT_RESPONSE" | jq
+
+export PRODUCT_ID=$(echo "$CREATE_PRODUCT_RESPONSE" | jq -r '.data.id')
+```
+
+### 10.7 List products
+
+```bash
+curl -s "$API_V1/products?page=1&limit=10&search=speaker&category_slug=audio&sort_by=created_at&sort_order=desc" | jq
+```
+
+### 10.8 Add product to cart
+
+```bash
+ADD_TO_CART_RESPONSE=$(curl -s -X POST "$API_V1/cart/items" \
+  -H "Authorization: Bearer $CUSTOMER_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d "{
+    \"product_id\": \"$PRODUCT_ID\",
+    \"quantity\": 2
+  }")
+
+echo "$ADD_TO_CART_RESPONSE" | jq
+```
+
+### 10.9 View cart
+
+```bash
+curl -s -X GET "$API_V1/cart" \
+  -H "Authorization: Bearer $CUSTOMER_TOKEN" | jq
+```
+
+### 10.10 Checkout
+
+> You need a customer address ID. Create/get address first if needed.
+
+Create an address:
+
+```bash
+CREATE_ADDRESS_RESPONSE=$(curl -s -X POST "$API_V1/customers/me/addresses" \
+  -H "Authorization: Bearer $CUSTOMER_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "receiver_name": "Sena Arya",
+    "phone": "+6281234567890",
+    "address": "Jl. Merdeka No. 10",
+    "city": "Bandung",
+    "province": "Jawa Barat",
+    "postal_code": "40123",
+    "is_default": true
+  }')
+
+echo "$CREATE_ADDRESS_RESPONSE" | jq
+
+export ADDRESS_ID=$(echo "$CREATE_ADDRESS_RESPONSE" | jq -r '.data.id')
+```
+
+Checkout active cart:
+
+```bash
+CHECKOUT_RESPONSE=$(curl -s -X POST "$API_V1/orders/checkout" \
+  -H "Authorization: Bearer $CUSTOMER_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d "{
+    \"address_id\": \"$ADDRESS_ID\",
+    \"notes\": \"Please pack with extra bubble wrap\"
+  }")
+
+echo "$CHECKOUT_RESPONSE" | jq
+
+export ORDER_ID=$(echo "$CHECKOUT_RESPONSE" | jq -r '.data.id')
+```
+
+### 10.11 Create payment
+
+```bash
+CREATE_PAYMENT_RESPONSE=$(curl -s -X POST "$API_V1/payments/orders/$ORDER_ID/pay" \
+  -H "Authorization: Bearer $CUSTOMER_TOKEN")
+
+echo "$CREATE_PAYMENT_RESPONSE" | jq
+
+export PAYMENT_ID=$(echo "$CREATE_PAYMENT_RESPONSE" | jq -r '.data.id')
+export PROVIDER_REFERENCE=$(echo "$CREATE_PAYMENT_RESPONSE" | jq -r '.data.provider_reference')
+```
+
+### 10.12 Simulate Midtrans paid webhook
+
+```bash
+curl -s -X POST "$API_V1/webhooks/payments/midtrans" \
+  -H "Content-Type: application/json" \
+  -d "{
+    \"order_id\": \"$ORDER_ID\",
+    \"transaction_status\": \"settlement\",
+    \"fraud_status\": \"accept\",
+    \"status_code\": \"200\",
+    \"transaction_id\": \"${PROVIDER_REFERENCE:-midtrans-tx-demo-001}\"
+  }" | jq
+```
+
+### 10.13 View customer order
+
+```bash
+curl -s -X GET "$API_V1/orders/$ORDER_ID" \
+  -H "Authorization: Bearer $CUSTOMER_TOKEN" | jq
+```
+
+### 10.14 View admin order
+
+```bash
+curl -s -X GET "$API_V1/admin/orders/$ORDER_ID" \
+  -H "Authorization: Bearer $ADMIN_TOKEN" | jq
+```
+
+### 10.15 Update order status to PROCESSING
+
+```bash
+curl -s -X PATCH "$API_V1/admin/orders/$ORDER_ID/status" \
+  -H "Authorization: Bearer $ADMIN_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "status": "PROCESSING"
+  }' | jq
+```
+
+### 10.16 View reports
+
+```bash
+# Orders report
+curl -s "$API_V1/admin/reports/orders?date_from=2026-01-01&date_to=2026-12-31" \
+  -H "Authorization: Bearer $ADMIN_TOKEN" | jq
+
+# Sales report
+curl -s "$API_V1/admin/reports/sales?date_from=2026-01-01&date_to=2026-12-31" \
+  -H "Authorization: Bearer $ADMIN_TOKEN" | jq
+
+# Products report
+curl -s "$API_V1/admin/reports/products?date_from=2026-01-01&date_to=2026-12-31" \
+  -H "Authorization: Bearer $ADMIN_TOKEN" | jq
+
+# Payments report
+curl -s "$API_V1/admin/reports/payments?date_from=2026-01-01&date_to=2026-12-31" \
+  -H "Authorization: Bearer $ADMIN_TOKEN" | jq
+```
+
+---
+
+## Troubleshooting
+
+### App cannot connect to DB
+- Ensure PostgreSQL container is running.
+- Verify `.env` DB host/port/user/password/db name.
+- Confirm migrations already ran successfully.
+
+### `401 Unauthorized`
+- Token missing/expired/invalid.
+- Ensure you pass `Authorization: Bearer <token>`.
+- Ensure admin endpoint uses admin token, not customer token.
+
+### `403 Forbidden`
+- Role mismatch (customer token used for admin endpoint).
+
+### Checkout fails with stock error
+- Product stock may be insufficient.
+- Update stock from admin endpoint, then retry cart/checkout flow.
+
+### Webhook does not update payment/order
+- Ensure webhook payload matches selected provider format.
+- Ensure provider reference/order ID maps to existing payment record.
+- Ensure `PAYMENT_PROVIDER` is configured as expected.
+
+---
+
+## Common Errors
+
+- **Validation error**: missing required JSON field (e.g., `product_id`, `quantity`, `address_id`).
+- **Duplicate slug/email**: unique DB constraint hit.
+- **Inactive product**: cannot be added to cart or checked out.
+- **Empty cart**: checkout blocked until cart has items.
+
+---
+
+## Reset Local Database
+
+> This deletes local DB data.
+
+```bash
+docker compose -f deployments/docker-compose.yml down -v
+
+docker compose -f deployments/docker-compose.yml up -d postgres
+
+# Re-run migrations after DB reset
+# (example shown in migration section)
+```
+
+If you also want to remove app container images created locally:
+
+```bash
+docker compose -f deployments/docker-compose.yml down --rmi local -v
+```
+
+---
+
+## Run Tests
+
+```bash
+go test ./...
+```
+
+Optional verbose run:
+
+```bash
+go test -v ./...
+```
