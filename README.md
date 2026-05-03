@@ -1,182 +1,108 @@
-# Go E-Commerce Modular Monolith (MVP Backend)
+# Standard E-Commerce Backend (Modular Monolith)
 
-A modular monolith backend for a standard e-commerce platform. It provides:
-- **Storefront APIs** for customers (register/login, browse products, cart, checkout, payments).
-- **Admin Backoffice APIs** for catalog management, orders, customer visibility, reports, and audit logs.
-- **Payment Gateway Adapter Layer** via a provider abstraction (Midtrans/Xendit implementations).
-
----
+Backend MVP for a standard e-commerce platform using a modular monolith architecture.
 
 ## 1) Project Overview
 
-This project is an MVP commerce backend that supports end-to-end ordering flow:
-1. Customer registers and logs in.
-2. Admin logs in and manages category/product catalog.
-3. Customer adds items to cart and checks out.
-4. Customer creates payment for an order.
-5. Payment webhook updates payment and order status.
+This service provides:
+- **User Storefront API**: customer auth, profile/address, catalog browsing, cart, checkout, payment, order history.
+- **Admin Backoffice API**: admin auth, category/product management, customer/order visibility, reports, audit logs.
+- **Payment Provider Adapter**: provider abstraction with Midtrans/Xendit handlers.
 
-It is intentionally kept practical for MVP delivery while preserving clean module boundaries.
+## 2) Tech Stack
 
----
+- Go
+- Gin
+- GORM
+- PostgreSQL
+- JWT
+- bcrypt
+- Zap
+- Docker Compose
 
-## 2) Architecture Summary
+## 3) Prerequisites
 
-### Modular monolith
-- Single deployable Go service.
-- Domain modules under `internal/*` (auth, customer, category, product, cart, order, payment, report, audit, etc.).
-- Repository → Service → Handler layering where applicable.
-
-### User storefront API
-- Public endpoints: product/category listing.
-- Authenticated customer endpoints: profile, address, cart, checkout, payment, order history.
-
-### Admin backoffice API
-- Admin-authenticated endpoints for:
-  - category/product CRUD
-  - order list/detail/status update
-  - customer visibility
-  - reports and audit logs
-
-### Payment gateway adapter
-- Uses `PaymentProvider` abstraction.
-- Provider selected via `PAYMENT_PROVIDER` environment variable.
-- Midtrans and Xendit providers exposed through webhook endpoints.
-
----
-
-## 3) Tech Stack
-
-- **Language:** Go (1.22+)
-- **Web:** Gin
-- **ORM/DB:** GORM + PostgreSQL
-- **Auth:** JWT
-- **Password Hashing:** bcrypt
-- **Logging:** Zap
-- **Container/Local DB:** Docker Compose
-
----
-
-## 4) Prerequisites
-
-Make sure these are installed:
-- Go 1.22+
+- Go **1.22+**
 - Docker + Docker Compose plugin
 - `curl`
-- Optional but recommended: `jq`
+- `jq` (recommended for token/id extraction)
+- `make` (optional; only if you add your own aliases)
 
-On Debian/Ubuntu (optional):
-
-```bash
-sudo apt-get update
-sudo apt-get install -y jq curl
-```
-
----
-
-## 5) Environment Variables
-
-1. Copy sample environment:
+## 4) Setup (Clean Clone)
 
 ```bash
+git clone <your-repo-url>
+cd go-be-mono-commerce
 cp .env.example .env
 ```
 
-2. Review/edit `.env` values (typical fields):
-- `APP_ENV`
-- `APP_PORT`
-- `DB_HOST`, `DB_PORT`, `DB_USER`, `DB_PASSWORD`, `DB_NAME`, `DB_SSLMODE`
-- `JWT_SECRET`
-- `PAYMENT_PROVIDER` (`midtrans` or `xendit`)
-- Provider keys/secrets if needed by your integration
-
-> Do not commit real secrets. Keep secrets only in local `.env` or secret manager.
-
----
-
-## 6) Run PostgreSQL with Docker Compose
-
-Start PostgreSQL:
+Start PostgreSQL (from repo root):
 
 ```bash
 docker compose -f deployments/docker-compose.yml up -d postgres
 ```
 
-Check status:
-
-```bash
-docker compose -f deployments/docker-compose.yml ps
-```
-
-Stop services:
-
-```bash
-docker compose -f deployments/docker-compose.yml down
-```
-
----
-
-## 7) Run Migrations
-
-SQL migrations are located in `migrations/`.
-
-Run in this order for empty DB:
-1. `000001_init.up.sql`
-2. `000003_ecommerce_schema.up.sql`
-3. `000002_seed_admin.up.sql`
-
-If you use `psql` directly (example):
+Run migrations (manual SQL order expected by this repo):
 
 ```bash
 export PGPASSWORD='postgres'
-psql -h localhost -p 5432 -U postgres -d commerce -f migrations/000001_init.up.sql
-psql -h localhost -p 5432 -U postgres -d commerce -f migrations/000003_ecommerce_schema.up.sql
-psql -h localhost -p 5432 -U postgres -d commerce -f migrations/000002_seed_admin.up.sql
+psql -h localhost -p 5432 -U postgres -d ecommerce -f migrations/000001_init.up.sql
+psql -h localhost -p 5432 -U postgres -d ecommerce -f migrations/000003_ecommerce_schema.up.sql
+psql -h localhost -p 5432 -U postgres -d ecommerce -f migrations/000002_seed_admin.up.sql
 ```
 
-> Adjust host/port/user/db/password to your `.env`.
+Seed admin:
+- Already handled by `migrations/000002_seed_admin.up.sql`.
+- Default seeded admin (for local dev):
+  - `admin@example.com`
+  - `admin12345`
 
----
-
-## 8) Start API
+Run app:
 
 ```bash
 go run ./cmd/api
 ```
 
-Default local base URL used in examples:
+## 5) Environment Variables
+
+`.env.example` contains baseline values.
+
+Required/important values:
+
+- `HTTP_PORT`: API port (default `8080`).
+  - Note: the app reads `HTTP_PORT` (not `APP_PORT`).
+- `DB_DSN`: PostgreSQL DSN used by GORM.
+  - Note: current config uses **single DSN** (`DB_DSN`), not split `DB_HOST/DB_PORT/...`.
+- `JWT_SECRET`: JWT signing secret.
+- `JWT_TTL_HOURS`: token TTL in hours.
+- `PAYMENT_PROVIDER`: `midtrans` or `xendit`.
+- `PAYMENT_MOCK_MODE`: `true`/`false` (mock provider behavior).
+- `MIDTRANS_SERVER_KEY`: Midtrans credential.
+- `XENDIT_SECRET_KEY`: Xendit credential.
+- `XENDIT_CALLBACK_TOKEN`: callback token used for webhook validation.
+
+Also used:
+- `APP_ENV`
+- `CORS_ALLOW_ORIGIN`
+- `SEED_ADMIN_EMAIL`
+- `SEED_ADMIN_PASSWORD`
+
+## 6) Full cURL Flow (Validated Against Current Handlers)
+
+Set shared variables:
 
 ```bash
 export BASE_URL="http://localhost:8080"
 export API_V1="$BASE_URL/api/v1"
 ```
 
----
-
-## 9) Default Seeded Admin
-
-After running seed migration, default admin account is:
-- **Email:** `admin@example.com`
-- **Password:** `admin12345`
-- **Role:** `SUPER_ADMIN`
-
-Use this only for local development. Change credentials for any non-local environment.
-
----
-
-## 10) Full End-to-End Curl Flow (Copy-Paste Friendly)
-
-> Tips:
-> - Commands below use `jq` for easy token/ID extraction.
-> - If you do not use `jq`, copy token/IDs manually from JSON response and set env vars yourself.
-
-### 10.1 Health check
+### 6.1 Health check
 
 ```bash
 curl -s "$BASE_URL/healthz" | jq
 ```
 
-### 10.2 Register customer
+### 6.2 Register customer
 
 ```bash
 curl -s -X POST "$API_V1/auth/customer/register" \
@@ -189,7 +115,7 @@ curl -s -X POST "$API_V1/auth/customer/register" \
   }' | jq
 ```
 
-### 10.3 Login customer and export token
+### 6.3 Login customer and export `CUSTOMER_TOKEN`
 
 ```bash
 CUSTOMER_LOGIN_RESPONSE=$(curl -s -X POST "$API_V1/auth/customer/login" \
@@ -200,16 +126,10 @@ CUSTOMER_LOGIN_RESPONSE=$(curl -s -X POST "$API_V1/auth/customer/login" \
   }')
 
 echo "$CUSTOMER_LOGIN_RESPONSE" | jq
-
-# With jq:
-export CUSTOMER_TOKEN=$(echo "$CUSTOMER_LOGIN_RESPONSE" | jq -r '.data.token')
-
-# Manual alternative (without jq):
-# 1) Copy token from response JSON
-# 2) export CUSTOMER_TOKEN='<paste_customer_token_here>'
+export CUSTOMER_TOKEN=$(echo "$CUSTOMER_LOGIN_RESPONSE" | jq -r '.data.access_token')
 ```
 
-### 10.4 Login admin and export token
+### 6.4 Login admin and export `ADMIN_TOKEN`
 
 ```bash
 ADMIN_LOGIN_RESPONSE=$(curl -s -X POST "$API_V1/auth/admin/login" \
@@ -220,14 +140,10 @@ ADMIN_LOGIN_RESPONSE=$(curl -s -X POST "$API_V1/auth/admin/login" \
   }')
 
 echo "$ADMIN_LOGIN_RESPONSE" | jq
-
-export ADMIN_TOKEN=$(echo "$ADMIN_LOGIN_RESPONSE" | jq -r '.data.token')
-
-# Manual alternative:
-# export ADMIN_TOKEN='<paste_admin_token_here>'
+export ADMIN_TOKEN=$(echo "$ADMIN_LOGIN_RESPONSE" | jq -r '.data.access_token')
 ```
 
-### 10.5 Create category
+### 6.5 Create category (admin)
 
 ```bash
 CREATE_CATEGORY_RESPONSE=$(curl -s -X POST "$API_V1/admin/categories" \
@@ -239,11 +155,10 @@ CREATE_CATEGORY_RESPONSE=$(curl -s -X POST "$API_V1/admin/categories" \
   }')
 
 echo "$CREATE_CATEGORY_RESPONSE" | jq
-
 export CATEGORY_ID=$(echo "$CREATE_CATEGORY_RESPONSE" | jq -r '.data.id')
 ```
 
-### 10.6 Create product
+### 6.6 Create product (admin)
 
 ```bash
 CREATE_PRODUCT_RESPONSE=$(curl -s -X POST "$API_V1/admin/products" \
@@ -257,54 +172,25 @@ CREATE_PRODUCT_RESPONSE=$(curl -s -X POST "$API_V1/admin/products" \
     \"price_amount\": 250000,
     \"compare_at_price_amount\": 350000,
     \"is_discount_active\": true,
-    \"discount_start_at\": \"2026-05-01T00:00:00+07:00\",
-    \"discount_end_at\": \"2026-05-31T23:59:59+07:00\",
+    \"discount_start_at\": \"2026-05-01T00:00:00Z\",
+    \"discount_end_at\": \"2026-05-31T23:59:59Z\",
     \"stock\": 50,
     \"images\": [
-      {
-        \"image_url\": \"https://images.example.com/products/bluetooth-speaker-x1-main.jpg\",
-        \"is_primary\": true
-      }
+      {"image_url":"https://example.com/images/speaker-x1-main.jpg","is_primary":true}
     ]
   }")
 
 echo "$CREATE_PRODUCT_RESPONSE" | jq
-
 export PRODUCT_ID=$(echo "$CREATE_PRODUCT_RESPONSE" | jq -r '.data.id')
 ```
 
-### 10.7 List products
+### 6.7 List products (public)
 
 ```bash
-curl -s "$API_V1/products?page=1&limit=10&search=speaker&category_slug=audio&sort_by=created_at&sort_order=desc" | jq
+curl -s "$API_V1/products?page=1&limit=10&sort_by=created_at&sort_order=DESC" | jq
 ```
 
-### 10.8 Add product to cart
-
-```bash
-ADD_TO_CART_RESPONSE=$(curl -s -X POST "$API_V1/cart/items" \
-  -H "Authorization: Bearer $CUSTOMER_TOKEN" \
-  -H "Content-Type: application/json" \
-  -d "{
-    \"product_id\": \"$PRODUCT_ID\",
-    \"quantity\": 2
-  }")
-
-echo "$ADD_TO_CART_RESPONSE" | jq
-```
-
-### 10.9 View cart
-
-```bash
-curl -s -X GET "$API_V1/cart" \
-  -H "Authorization: Bearer $CUSTOMER_TOKEN" | jq
-```
-
-### 10.10 Checkout
-
-> You need a customer address ID. Create/get address first if needed.
-
-Create an address:
+### 6.8 Create customer address (required before checkout)
 
 ```bash
 CREATE_ADDRESS_RESPONSE=$(curl -s -X POST "$API_V1/customers/me/addresses" \
@@ -313,19 +199,38 @@ CREATE_ADDRESS_RESPONSE=$(curl -s -X POST "$API_V1/customers/me/addresses" \
   -d '{
     "receiver_name": "Sena Arya",
     "phone": "+6281234567890",
-    "address": "Jl. Merdeka No. 10",
+    "address": "Jl. Mawar No. 10",
     "city": "Bandung",
     "province": "Jawa Barat",
-    "postal_code": "40123",
+    "postal_code": "40111",
     "is_default": true
   }')
 
 echo "$CREATE_ADDRESS_RESPONSE" | jq
-
 export ADDRESS_ID=$(echo "$CREATE_ADDRESS_RESPONSE" | jq -r '.data.id')
 ```
 
-Checkout active cart:
+### 6.9 Add product to cart
+
+```bash
+curl -s -X POST "$API_V1/cart/items" \
+  -H "Authorization: Bearer $CUSTOMER_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d "{
+    \"product_id\": \"$PRODUCT_ID\",
+    \"quantity\": 2
+  }" | jq
+```
+
+### 6.10 View cart
+
+```bash
+CART_RESPONSE=$(curl -s "$API_V1/cart" -H "Authorization: Bearer $CUSTOMER_TOKEN")
+echo "$CART_RESPONSE" | jq
+export CART_ITEM_ID=$(echo "$CART_RESPONSE" | jq -r '.data.items[0].id')
+```
+
+### 6.11 Checkout
 
 ```bash
 CHECKOUT_RESPONSE=$(curl -s -X POST "$API_V1/orders/checkout" \
@@ -333,73 +238,25 @@ CHECKOUT_RESPONSE=$(curl -s -X POST "$API_V1/orders/checkout" \
   -H "Content-Type: application/json" \
   -d "{
     \"address_id\": \"$ADDRESS_ID\",
-    \"notes\": \"Please pack with extra bubble wrap\"
+    \"notes\": \"Leave at front desk\"
   }")
 
 echo "$CHECKOUT_RESPONSE" | jq
-
 export ORDER_ID=$(echo "$CHECKOUT_RESPONSE" | jq -r '.data.id')
 ```
 
-
-### 10.10.a Customer profile and address book
-
-Get customer profile:
-
-```bash
-curl -s -X GET "$API_V1/customers/me" \
-  -H "Authorization: Bearer $CUSTOMER_TOKEN" | jq
-```
-
-Update customer profile:
-
-```bash
-curl -s -X PUT "$API_V1/customers/me" \
-  -H "Authorization: Bearer $CUSTOMER_TOKEN" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "name": "Sena Putra",
-    "phone": "08123456789"
-  }' | jq
-```
-
-List my addresses:
-
-```bash
-curl -s -X GET "$API_V1/customers/me/addresses" \
-  -H "Authorization: Bearer $CUSTOMER_TOKEN" | jq
-```
-
-Update address:
-
-```bash
-curl -s -X PUT "$API_V1/customers/me/addresses/$ADDRESS_ID" \
-  -H "Authorization: Bearer $CUSTOMER_TOKEN" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "receiver_name": "Sena",
-    "phone": "08123456789",
-    "address": "Jl. Example No. 1",
-    "city": "Jakarta",
-    "province": "DKI Jakarta",
-    "postal_code": "10110",
-    "is_default": true
-  }' | jq
-```
-
-### 10.11 Create payment
+### 6.12 Create payment for order
 
 ```bash
 CREATE_PAYMENT_RESPONSE=$(curl -s -X POST "$API_V1/payments/orders/$ORDER_ID/pay" \
   -H "Authorization: Bearer $CUSTOMER_TOKEN")
 
 echo "$CREATE_PAYMENT_RESPONSE" | jq
-
-export PAYMENT_ID=$(echo "$CREATE_PAYMENT_RESPONSE" | jq -r '.data.id')
+export PAYMENT_ID=$(echo "$CREATE_PAYMENT_RESPONSE" | jq -r '.data.payment_id')
 export PROVIDER_REFERENCE=$(echo "$CREATE_PAYMENT_RESPONSE" | jq -r '.data.provider_reference')
 ```
 
-### 10.12 Simulate Midtrans paid webhook
+### 6.13 Simulate Midtrans paid webhook
 
 ```bash
 curl -s -X POST "$API_V1/webhooks/payments/midtrans" \
@@ -407,181 +264,91 @@ curl -s -X POST "$API_V1/webhooks/payments/midtrans" \
   -d "{
     \"order_id\": \"$ORDER_ID\",
     \"transaction_status\": \"settlement\",
-    \"fraud_status\": \"accept\",
     \"status_code\": \"200\",
-    \"transaction_id\": \"${PROVIDER_REFERENCE:-midtrans-tx-demo-001}\"
+    \"signature_key\": \"mock-signature\",
+    \"transaction_id\": \"$PROVIDER_REFERENCE\"
   }" | jq
 ```
 
-### 10.13 View customer order
+### 6.14 Simulate Xendit paid webhook
 
 ```bash
-curl -s -X GET "$API_V1/orders/$ORDER_ID" \
-  -H "Authorization: Bearer $CUSTOMER_TOKEN" | jq
+curl -s -X POST "$API_V1/webhooks/payments/xendit" \
+  -H "Content-Type: application/json" \
+  -H "X-CALLBACK-TOKEN: ${XENDIT_CALLBACK_TOKEN:-dummy-token}" \
+  -d "{
+    \"id\": \"evt-$ORDER_ID\",
+    \"external_id\": \"$ORDER_ID\",
+    \"status\": \"PAID\",
+    \"reference_id\": \"$PROVIDER_REFERENCE\"
+  }" | jq
 ```
 
-### 10.14 View admin order
+### 6.15 View customer order(s)
 
 ```bash
-curl -s -X GET "$API_V1/admin/orders/$ORDER_ID" \
-  -H "Authorization: Bearer $ADMIN_TOKEN" | jq
+curl -s "$API_V1/orders" -H "Authorization: Bearer $CUSTOMER_TOKEN" | jq
+curl -s "$API_V1/orders/$ORDER_ID" -H "Authorization: Bearer $CUSTOMER_TOKEN" | jq
 ```
 
-
-### 10.16 Admin customer visibility
+### 6.16 View admin order(s)
 
 ```bash
-curl -s "$API_V1/admin/customers" \
-  -H "Authorization: Bearer $ADMIN_TOKEN" | jq
-
-curl -s "$API_V1/admin/customers/$CUSTOMER_ID" \
-  -H "Authorization: Bearer $ADMIN_TOKEN" | jq
-
-curl -s "$API_V1/admin/customers/$CUSTOMER_ID/orders" \
-  -H "Authorization: Bearer $ADMIN_TOKEN" | jq
+curl -s "$API_V1/admin/orders" -H "Authorization: Bearer $ADMIN_TOKEN" | jq
+curl -s "$API_V1/admin/orders/$ORDER_ID" -H "Authorization: Bearer $ADMIN_TOKEN" | jq
 ```
 
-### 10.15 Update order status to PROCESSING
+### 6.17 Update order status (admin)
 
 ```bash
 curl -s -X PATCH "$API_V1/admin/orders/$ORDER_ID/status" \
   -H "Authorization: Bearer $ADMIN_TOKEN" \
   -H "Content-Type: application/json" \
-  -d '{
-    "status": "PROCESSING"
-  }' | jq
+  -d '{"status":"PROCESSING"}' | jq
 ```
 
-### 10.16 View reports
+### 6.18 View admin reports
 
 ```bash
-# Orders report
-curl -s "$API_V1/admin/reports/orders?date_from=2026-01-01&date_to=2026-12-31" \
-  -H "Authorization: Bearer $ADMIN_TOKEN" | jq
-
-# Sales report
-curl -s "$API_V1/admin/reports/sales?date_from=2026-01-01&date_to=2026-12-31" \
-  -H "Authorization: Bearer $ADMIN_TOKEN" | jq
-
-# Products report
-curl -s "$API_V1/admin/reports/products?date_from=2026-01-01&date_to=2026-12-31" \
-  -H "Authorization: Bearer $ADMIN_TOKEN" | jq
-
-# Payments report
-curl -s "$API_V1/admin/reports/payments?date_from=2026-01-01&date_to=2026-12-31" \
-  -H "Authorization: Bearer $ADMIN_TOKEN" | jq
+curl -s "$API_V1/admin/reports/orders?date_from=2026-01-01&date_to=2026-12-31" -H "Authorization: Bearer $ADMIN_TOKEN" | jq
+curl -s "$API_V1/admin/reports/sales?date_from=2026-01-01&date_to=2026-12-31" -H "Authorization: Bearer $ADMIN_TOKEN" | jq
+curl -s "$API_V1/admin/reports/products?date_from=2026-01-01&date_to=2026-12-31" -H "Authorization: Bearer $ADMIN_TOKEN" | jq
+curl -s "$API_V1/admin/reports/payments?date_from=2026-01-01&date_to=2026-12-31" -H "Authorization: Bearer $ADMIN_TOKEN" | jq
 ```
 
----
+## 7) Troubleshooting
 
-## Troubleshooting
+- **DB connection failed**
+  - Confirm PostgreSQL container is up: `docker compose -f deployments/docker-compose.yml ps`
+  - Verify `DB_DSN` in `.env` and DB name/user/password.
+- **Migration failed**
+  - Ensure DB exists and extension privileges are available.
+  - Re-run SQL files in required order.
+- **JWT invalid / unauthorized**
+  - Ensure `Authorization: Bearer <token>` format.
+  - Re-login if token expired (`JWT_TTL_HOURS`).
+  - Ensure `JWT_SECRET` is consistent between token generation and API runtime.
+- **Admin seed missing**
+  - Re-run `migrations/000002_seed_admin.up.sql` and verify `admin_users` table.
+- **Payment webhook duplicate**
+  - Current payment service is idempotent-aware; duplicate events are recorded and should not double-apply status.
+- **Insufficient stock**
+  - Checkout validates stock in DB transaction; reduce quantity or update product stock from admin endpoint.
 
-### App cannot connect to DB
-- Ensure PostgreSQL container is running.
-- Verify `.env` DB host/port/user/password/db name.
-- Confirm migrations already ran successfully.
-
-### `401 Unauthorized`
-- Token missing/expired/invalid.
-- Ensure you pass `Authorization: Bearer <token>`.
-- Ensure admin endpoint uses admin token, not customer token.
-
-### `403 Forbidden`
-- Role mismatch (customer token used for admin endpoint).
-
-### Checkout fails with stock error
-- Product stock may be insufficient.
-- Update stock from admin endpoint, then retry cart/checkout flow.
-
-### Webhook does not update payment/order
-- Ensure webhook payload matches selected provider format.
-- Ensure provider reference/order ID maps to existing payment record.
-- Ensure `PAYMENT_PROVIDER` is configured as expected.
-
----
-
-## Common Errors
-
-- **Validation error**: missing required JSON field (e.g., `product_id`, `quantity`, `address_id`).
-- **Duplicate slug/email**: unique DB constraint hit.
-- **Inactive product**: cannot be added to cart or checked out.
-- **Empty cart**: checkout blocked until cart has items.
-
----
-
-## Reset Local Database
-
-> This deletes local DB data.
-
-```bash
-docker compose -f deployments/docker-compose.yml down -v
-
-docker compose -f deployments/docker-compose.yml up -d postgres
-
-# Re-run migrations after DB reset
-# (example shown in migration section)
-```
-
-If you also want to remove app container images created locally:
-
-```bash
-docker compose -f deployments/docker-compose.yml down --rmi local -v
-```
-
----
-
-## Run Tests
+## 8) Test
 
 ```bash
 go test ./...
 ```
 
-Optional verbose run:
+Race detector (recommended locally):
 
 ```bash
-go test -v ./...
+go test ./... -race
 ```
 
----
+## 9) Notes on Current Implementation Honesty
 
-## 15) Database Defensive Constraints (Integrity Guardrails)
-
-The database enforces additional **CHECK constraints** and **indexes** to prevent invalid commerce data, even if application-level validation is bypassed.
-
-### Enforced checks
-- `products`
-  - `stock >= 0`
-  - `price_amount >= 0`
-  - `compare_at_price_amount IS NULL OR compare_at_price_amount > price_amount`
-- `cart_items`
-  - `quantity > 0`
-  - `price_snapshot_amount >= 0`
-- `order_items`
-  - `quantity > 0`
-  - `price_amount >= 0`
-  - `subtotal_amount >= 0`
-- `orders`
-  - `total_amount >= 0`
-  - status is restricted to:
-    `PENDING_PAYMENT, PAID, PROCESSING, READY_TO_SHIP, SHIPPED, COMPLETED, CANCELLED, EXPIRED, FAILED`
-- `payments`
-  - `amount >= 0`
-  - status is restricted to:
-    `PENDING, PAID, EXPIRED, FAILED, CANCELLED, REFUNDED`
-
-### Added indexes
-- `products(is_active)`
-- `products(category_id)`
-- `orders(customer_id)`
-- `orders(status)`
-- `payments(order_id)`
-- `payments(provider, provider_reference)`
-- `cart_items(cart_id, product_id)`
-- unique `payment_webhook_events(provider, event_id)`
-
-### Migration file
-Apply:
-- `migrations/000007_commerce_integrity_constraints.up.sql`
-
-Rollback:
-- `migrations/000007_commerce_integrity_constraints.down.sql`
+- This runbook matches currently registered routes and request DTOs.
+- Some integrations may run in mock mode depending on `PAYMENT_MOCK_MODE` and provider credentials.
+- If provider-specific webhook signatures are strict in your environment, pass matching headers/tokens accordingly.
