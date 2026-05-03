@@ -7,6 +7,7 @@ import (
 	"go-be-mono-commerce/internal/cart"
 	"go-be-mono-commerce/internal/category"
 	"go-be-mono-commerce/internal/config"
+	"go-be-mono-commerce/internal/customer"
 	"go-be-mono-commerce/internal/database"
 	"go-be-mono-commerce/internal/middleware"
 	"go-be-mono-commerce/internal/order"
@@ -76,15 +77,18 @@ func registerRoutes(v1 *gin.RouterGroup, cfg config.Config, db *gorm.DB) {
 		response.OK(c, gin.H{"user_id": c.GetString("user_id"), "role": c.GetString("role")})
 	})
 
+	custRepo := customer.NewRepository(db)
+	custSvc := customer.NewService(custRepo)
+	custHandler := customer.NewHandler(custSvc)
 	cust := v1.Group("/customers/me", middleware.AuthJWT(cfg.JWTSecret), middleware.RequireRoles(auth.RoleCustomer))
-	cust.GET("", ok)
-	cust.PUT("", ok)
-	cust.GET("/addresses", ok)
-	cust.POST("/addresses", ok)
-	cust.PUT("/addresses/:id", ok)
-	cust.DELETE("/addresses/:id", ok)
-	cust.GET("/orders", ok)
-	cust.GET("/orders/:id", ok)
+	cust.GET("", custHandler.Me)
+	cust.PUT("", custHandler.UpdateMe)
+	cust.GET("/addresses", custHandler.ListAddresses)
+	cust.POST("/addresses", custHandler.CreateAddress)
+	cust.PUT("/addresses/:id", custHandler.UpdateAddress)
+	cust.DELETE("/addresses/:id", custHandler.DeleteAddress)
+	cust.GET("/orders", custHandler.ListMyOrders)
+	cust.GET("/orders/:id", custHandler.GetMyOrder)
 	cartSvc := cart.NewService(db)
 	cartGroup := v1.Group("/cart", middleware.AuthJWT(cfg.JWTSecret), middleware.RequireRoles(auth.RoleCustomer))
 	cartGroup.GET("", func(c *gin.Context) {
@@ -239,9 +243,9 @@ func registerRoutes(v1 *gin.RouterGroup, cfg config.Config, db *gorm.DB) {
 	v1.POST("/webhooks/payments/xendit", payHandler.XenditWebhook)
 
 	admin := v1.Group("/admin", middleware.AuthJWT(cfg.JWTSecret), middleware.RequireRoles(auth.RoleAdmin))
-	admin.GET("/customers", ok)
-	admin.GET("/customers/:id", ok)
-	admin.GET("/customers/:id/orders", ok)
+	admin.GET("/customers", custHandler.AdminListCustomers)
+	admin.GET("/customers/:id", custHandler.AdminGetCustomer)
+	admin.GET("/customers/:id/orders", custHandler.AdminGetCustomerOrders)
 	admin.POST("/categories", func(c *gin.Context) {
 		var req category.UpsertCategoryRequest
 		if c.ShouldBindJSON(&req) != nil {
