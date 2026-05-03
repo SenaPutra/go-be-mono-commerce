@@ -51,6 +51,16 @@ func Validation(details interface{}) *AppError {
 	return New(CodeValidationError, "Validation error", details)
 }
 
+func Unauthorized(details interface{}) *AppError {
+	return New(CodeUnauthorized, "Unauthorized", details)
+}
+func Forbidden(details interface{}) *AppError { return New(CodeForbidden, "Forbidden", details) }
+func NotFound(details interface{}) *AppError  { return New(CodeNotFound, "Not found", details) }
+func Conflict(details interface{}) *AppError  { return New(CodeConflict, "Conflict", details) }
+func Internal(err error) *AppError {
+	return &AppError{Code: CodeInternalError, Message: "Internal server error", Err: err}
+}
+
 func AsAppError(err error) *AppError {
 	if err == nil {
 		return nil

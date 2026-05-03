@@ -2,7 +2,6 @@ package auth
 
 import (
 	"errors"
-	"net/http"
 	"regexp"
 	"strconv"
 	"strings"
@@ -11,6 +10,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"go-be-mono-commerce/internal/database"
+	apperrors "go-be-mono-commerce/pkg/errors"
 	"go-be-mono-commerce/pkg/response"
 	"golang.org/x/crypto/bcrypt"
 	"gorm.io/gorm"
@@ -160,15 +160,15 @@ func handleAuthErr(c *gin.Context, err error) {
 	msg := err.Error()
 	switch {
 	case strings.HasPrefix(msg, "VALIDATION:"):
-		response.Fail(c, http.StatusBadRequest, "Validation error", "VALIDATION_ERROR", strings.Split(strings.TrimPrefix(msg, "VALIDATION:"), ";"))
+		response.Error(c, apperrors.Validation(strings.Split(strings.TrimPrefix(msg, "VALIDATION:"), ";")))
 	case strings.HasPrefix(msg, "CONFLICT:"):
-		response.Fail(c, http.StatusConflict, "Conflict", "CONFLICT", []string{strings.TrimPrefix(msg, "CONFLICT:")})
+		response.Error(c, apperrors.Conflict([]string{strings.TrimPrefix(msg, "CONFLICT:")}))
 	case msg == "INACTIVE":
-		response.Fail(c, http.StatusUnauthorized, "Unauthorized", "UNAUTHORIZED", []string{"user is inactive"})
+		response.Error(c, apperrors.Unauthorized([]string{"user is inactive"}))
 	case msg == "UNAUTHORIZED":
-		response.Fail(c, http.StatusUnauthorized, "Unauthorized", "UNAUTHORIZED", []string{"invalid credentials"})
+		response.Error(c, apperrors.Unauthorized([]string{"invalid credentials"}))
 	default:
-		response.Fail(c, http.StatusInternalServerError, "Internal server error", "INTERNAL_ERROR", nil)
+		response.Error(c, apperrors.Internal(err))
 	}
 }
 
