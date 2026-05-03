@@ -58,7 +58,7 @@ func (s *Service) Checkout(customerID uuid.UUID, req CheckoutRequest) (*database
 			return errors.New("VALIDATION:address does not belong to customer")
 		}
 		var cart database.Cart
-		if err := tx.Where("customer_id = ? and status = ?", customerID, "ACTIVE").First(&cart).Error; err != nil {
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("customer_id = ? and status = ?", customerID, "ACTIVE").First(&cart).Error; err != nil {
 			return errors.New("NOT_FOUND:active cart")
 		}
 		var items []database.CartItem
