@@ -1,8 +1,8 @@
 openapi: 3.0.3
 info:
   title: Standard E-Commerce Backend API
-  version: 1.0.0
-  description: API specification for a standard e-commerce backend.
+  version: 1.1.0
+  description: OpenAPI for all currently exposed /api/v1 endpoints.
 servers:
   - url: /api/v1
     description: Base API v1 path
@@ -15,6 +15,7 @@ tags:
   - name: Cart
   - name: Order
   - name: Payment
+  - name: Admin Category
   - name: Admin Product
   - name: Admin Order
   - name: Admin Customer
@@ -29,7 +30,20 @@ components:
       type: http
       scheme: bearer
       bearerFormat: JWT
+
   schemas:
+    ApiError:
+      type: object
+      nullable: true
+      properties:
+        code:
+          type: string
+          example: VALIDATION_ERROR
+        details:
+          type: array
+          items:
+            type: string
+
     StandardResponse:
       type: object
       properties:
@@ -38,718 +52,647 @@ components:
           example: true
         message:
           type: string
-          example: Request successful
+          example: OK
         data:
           nullable: true
-      required: [success, message]
-
-    ErrorResponse:
-      type: object
-      properties:
-        success:
-          type: boolean
-          example: false
-        message:
-          type: string
-          example: Validation failed
         error:
-          type: object
-          properties:
-            code:
-              type: string
-              example: VALIDATION_ERROR
-            details:
-              type: string
-              example: email is required
-      required: [success, message]
-
-    CustomerAddress:
-      type: object
-      properties:
-        id:
-          type: string
-          format: uuid
-        label:
-          type: string
-          example: Home
-        recipientName:
-          type: string
-        phone:
-          type: string
-        line1:
-          type: string
-        line2:
-          type: string
-          nullable: true
-        city:
-          type: string
-        state:
-          type: string
-        postalCode:
-          type: string
-        country:
-          type: string
-        isDefault:
-          type: boolean
-      required: [id, recipientName, phone, line1, city, state, postalCode, country, isDefault]
-
-    Customer:
-      type: object
-      properties:
-        id:
-          type: string
-          format: uuid
-        email:
-          type: string
-          format: email
-        fullName:
-          type: string
-        phone:
-          type: string
-        status:
-          type: string
-          enum: [active, suspended]
-        addresses:
-          type: array
-          items:
-            $ref: '#/components/schemas/CustomerAddress'
-        createdAt:
-          type: string
-          format: date-time
-        updatedAt:
-          type: string
-          format: date-time
-      required: [id, email, fullName, status, createdAt, updatedAt]
-
-    AdminUser:
-      type: object
-      properties:
-        id:
-          type: string
-          format: uuid
-        email:
-          type: string
-          format: email
-        fullName:
-          type: string
-        role:
-          type: string
-          enum: [admin, manager]
-        createdAt:
-          type: string
-          format: date-time
-      required: [id, email, fullName, role, createdAt]
-
-    Category:
-      type: object
-      properties:
-        id:
-          type: string
-          format: uuid
-        name:
-          type: string
-        slug:
-          type: string
-        description:
-          type: string
-          nullable: true
-        parentId:
-          type: string
-          format: uuid
-          nullable: true
-        isActive:
-          type: boolean
-      required: [id, name, slug, isActive]
-
-    Product:
-      type: object
-      properties:
-        id:
-          type: string
-          format: uuid
-        sku:
-          type: string
-        name:
-          type: string
-        slug:
-          type: string
-        description:
-          type: string
-        categoryId:
-          type: string
-          format: uuid
-        price:
-          type: number
-          format: float
-        stock:
-          type: integer
-          format: int32
-        images:
-          type: array
-          items:
-            type: string
-            format: uri
-        isActive:
-          type: boolean
-        createdAt:
-          type: string
-          format: date-time
-        updatedAt:
-          type: string
-          format: date-time
-      required: [id, sku, name, slug, categoryId, price, stock, isActive, createdAt, updatedAt]
-
-    CartItem:
-      type: object
-      properties:
-        id:
-          type: string
-          format: uuid
-        productId:
-          type: string
-          format: uuid
-        productName:
-          type: string
-        quantity:
-          type: integer
-          minimum: 1
-        unitPrice:
-          type: number
-          format: float
-        subtotal:
-          type: number
-          format: float
-      required: [id, productId, productName, quantity, unitPrice, subtotal]
-
-    Cart:
-      type: object
-      properties:
-        id:
-          type: string
-          format: uuid
-        customerId:
-          type: string
-          format: uuid
-        items:
-          type: array
-          items:
-            $ref: '#/components/schemas/CartItem'
-        totalAmount:
-          type: number
-          format: float
-        updatedAt:
-          type: string
-          format: date-time
-      required: [id, customerId, items, totalAmount, updatedAt]
-
-    OrderItem:
-      type: object
-      properties:
-        id:
-          type: string
-          format: uuid
-        productId:
-          type: string
-          format: uuid
-        productName:
-          type: string
-        quantity:
-          type: integer
-        unitPrice:
-          type: number
-          format: float
-        subtotal:
-          type: number
-          format: float
-      required: [id, productId, productName, quantity, unitPrice, subtotal]
-
-    Order:
-      type: object
-      properties:
-        id:
-          type: string
-          format: uuid
-        orderNumber:
-          type: string
-        customerId:
-          type: string
-          format: uuid
-        items:
-          type: array
-          items:
-            $ref: '#/components/schemas/OrderItem'
-        shippingAddress:
-          $ref: '#/components/schemas/CustomerAddress'
-        status:
-          type: string
-          enum: [pending, paid, processing, shipped, delivered, cancelled, refunded]
-        paymentStatus:
-          type: string
-          enum: [unpaid, paid, failed, refunded]
-        subtotal:
-          type: number
-          format: float
-        shippingFee:
-          type: number
-          format: float
-        totalAmount:
-          type: number
-          format: float
-        createdAt:
-          type: string
-          format: date-time
-        updatedAt:
-          type: string
-          format: date-time
-      required: [id, orderNumber, customerId, items, shippingAddress, status, paymentStatus, subtotal, shippingFee, totalAmount, createdAt, updatedAt]
-
-    Payment:
-      type: object
-      properties:
-        id:
-          type: string
-          format: uuid
-        orderId:
-          type: string
-          format: uuid
-        provider:
-          type: string
-          example: stripe
-        method:
-          type: string
-          example: card
-        amount:
-          type: number
-          format: float
-        currency:
-          type: string
-          example: USD
-        status:
-          type: string
-          enum: [pending, succeeded, failed, cancelled, refunded]
-        providerRef:
-          type: string
-        paidAt:
-          type: string
-          format: date-time
-          nullable: true
-        createdAt:
-          type: string
-          format: date-time
-      required: [id, orderId, provider, method, amount, currency, status, createdAt]
-
-    AuditLog:
-      type: object
-      properties:
-        id:
-          type: string
-          format: uuid
-        actorId:
-          type: string
-          format: uuid
-        actorType:
-          type: string
-          enum: [admin, system]
-        action:
-          type: string
-        entityType:
-          type: string
-        entityId:
-          type: string
-          format: uuid
-        before:
-          type: object
-          nullable: true
-        after:
-          type: object
-          nullable: true
-        ipAddress:
-          type: string
-        createdAt:
-          type: string
-          format: date-time
-      required: [id, actorId, actorType, action, entityType, entityId, createdAt]
-
-    LoginRequest:
-      type: object
-      properties:
-        email:
-          type: string
-          format: email
-        password:
-          type: string
-          format: password
-      required: [email, password]
+          $ref: '#/components/schemas/ApiError'
+      required: [success, message, data, error]
 
     RegisterCustomerRequest:
       type: object
       properties:
-        email:
-          type: string
-          format: email
-        password:
-          type: string
-          format: password
-        fullName:
-          type: string
-        phone:
-          type: string
-      required: [email, password, fullName]
+        email: { type: string, format: email }
+        password: { type: string, format: password }
+        full_name: { type: string }
+        phone: { type: string }
+      required: [email, password, full_name]
 
-    CreateProductRequest:
+    LoginRequest:
       type: object
       properties:
-        sku:
-          type: string
-        name:
-          type: string
-        description:
-          type: string
-        categoryId:
-          type: string
-          format: uuid
-        price:
-          type: number
-          format: float
-        stock:
-          type: integer
-        images:
-          type: array
-          items:
-            type: string
-            format: uri
-      required: [sku, name, categoryId, price, stock]
+        email: { type: string, format: email }
+        password: { type: string, format: password }
+      required: [email, password]
+
+    UpsertCategoryRequest:
+      type: object
+      properties:
+        name: { type: string }
+        slug: { type: string }
+        description: { type: string }
+      required: [name, slug]
+
+    UpsertProductRequest:
+      type: object
+      properties:
+        category_id: { type: string, format: uuid }
+        name: { type: string }
+        slug: { type: string }
+        sku: { type: string }
+        description: { type: string }
+        price: { type: integer, format: int64, example: 100000 }
+        stock: { type: integer, minimum: 0 }
+        image_url: { type: string, format: uri }
+      required: [category_id, name, slug, sku, price, stock]
 
     AddCartItemRequest:
       type: object
       properties:
-        productId:
-          type: string
-          format: uuid
-        quantity:
-          type: integer
-          minimum: 1
-      required: [productId, quantity]
+        product_id: { type: string, format: uuid }
+        quantity: { type: integer, minimum: 1 }
+      required: [product_id, quantity]
+
+    UpdateCartItemRequest:
+      type: object
+      properties:
+        quantity: { type: integer, minimum: 1 }
+      required: [quantity]
 
     CheckoutRequest:
       type: object
       properties:
-        addressId:
-          type: string
-          format: uuid
-        paymentMethod:
-          type: string
-          example: card
-        notes:
-          type: string
-          nullable: true
-      required: [addressId, paymentMethod]
-
-    CreatePaymentResponse:
-      type: object
-      properties:
-        paymentId:
-          type: string
-          format: uuid
-        clientSecret:
-          type: string
-        redirectUrl:
-          type: string
-          format: uri
-          nullable: true
-      required: [paymentId, clientSecret]
+        address_id: { type: string, format: uuid }
+      required: [address_id]
 
     UpdateOrderStatusRequest:
       type: object
       properties:
         status:
           type: string
-          enum: [pending, paid, processing, shipped, delivered, cancelled, refunded]
-        note:
-          type: string
-          nullable: true
+          enum: [PENDING_PAYMENT, PAID, PROCESSING, READY_TO_SHIP, SHIPPED, COMPLETED, CANCELLED, EXPIRED, FAILED]
       required: [status]
 
+    UpdateStockRequest:
+      type: object
+      properties:
+        stock: { type: integer, minimum: 0 }
+      required: [stock]
+
+    AddressRequest:
+      type: object
+      properties:
+        label: { type: string }
+        recipient_name: { type: string }
+        phone: { type: string }
+        line1: { type: string }
+        line2: { type: string }
+        city: { type: string }
+        state: { type: string }
+        postal_code: { type: string }
+        country: { type: string }
+        is_default: { type: boolean }
+      required: [recipient_name, phone, line1, city, state, postal_code, country]
+
 paths:
-  /auth/register:
+  /auth/customer/register:
     post:
       tags: [Auth]
-      summary: Register a new customer account
+      summary: Register customer
       requestBody:
         required: true
         content:
           application/json:
-            schema:
-              $ref: '#/components/schemas/RegisterCustomerRequest'
+            schema: { $ref: '#/components/schemas/RegisterCustomerRequest' }
       responses:
-        '201':
-          description: Customer registered
-  /auth/login:
+        '201': { description: Created }
+
+  /auth/customer/login:
     post:
       tags: [Auth]
-      summary: Login for customer/admin
+      summary: Customer login
       requestBody:
         required: true
         content:
           application/json:
-            schema:
-              $ref: '#/components/schemas/LoginRequest'
+            schema: { $ref: '#/components/schemas/LoginRequest' }
       responses:
-        '200':
-          description: Authenticated
+        '200': { description: OK }
+
+  /auth/admin/login:
+    post:
+      tags: [Auth]
+      summary: Admin login
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/LoginRequest' }
+      responses:
+        '200': { description: OK }
+
   /auth/me:
     get:
       tags: [Auth]
-      summary: Get current customer profile
-      security:
-        - bearerAuth: []
+      summary: Authenticated user info
+      security: [{ bearerAuth: [] }]
       responses:
-        '200':
-          description: Current profile
-
-  /customers/me:
-    get:
-      tags: [Customer]
-      summary: Get customer profile
-      security:
-        - bearerAuth: []
-      responses:
-        '200':
-          description: Customer profile
-
-  /products:
-    get:
-      tags: [Product]
-      summary: List products (public)
-      responses:
-        '200':
-          description: Product list
-  /products/{productId}:
-    get:
-      tags: [Product]
-      summary: Get product detail (public)
-      parameters:
-        - in: path
-          name: productId
-          required: true
-          schema:
-            type: string
-            format: uuid
-      responses:
-        '200':
-          description: Product detail
+        '200': { description: OK }
 
   /categories:
     get:
       tags: [Category]
-      summary: List categories (public)
+      summary: Public category list
       responses:
-        '200':
-          description: Category list
+        '200': { description: OK }
+
+  /products:
+    get:
+      tags: [Product]
+      summary: Public product list
+      parameters:
+        - in: query
+          name: page
+          schema: { type: integer, minimum: 1 }
+        - in: query
+          name: limit
+          schema: { type: integer, minimum: 1 }
+      responses:
+        '200': { description: OK }
+
+  /products/{slug}:
+    get:
+      tags: [Product]
+      summary: Public product detail by slug
+      parameters:
+        - in: path
+          name: slug
+          required: true
+          schema: { type: string }
+      responses:
+        '200': { description: OK }
+
+  /customers/me:
+    get:
+      tags: [Customer]
+      summary: Customer profile
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { description: OK }
+    put:
+      tags: [Customer]
+      summary: Update customer profile
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        '200': { description: OK }
+
+  /customers/me/addresses:
+    get:
+      tags: [Customer]
+      summary: Customer addresses
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { description: OK }
+    post:
+      tags: [Customer]
+      summary: Create address
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AddressRequest' }
+      responses:
+        '201': { description: Created }
+
+  /customers/me/addresses/{id}:
+    put:
+      tags: [Customer]
+      summary: Update address
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AddressRequest' }
+      responses:
+        '200': { description: OK }
+    delete:
+      tags: [Customer]
+      summary: Delete address
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200': { description: OK }
+
+  /customers/me/orders:
+    get:
+      tags: [Customer]
+      summary: Customer order history
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { description: OK }
+
+  /customers/me/orders/{id}:
+    get:
+      tags: [Customer]
+      summary: Customer order detail
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200': { description: OK }
 
   /cart:
     get:
       tags: [Cart]
-      summary: Get current customer cart
-      security:
-        - bearerAuth: []
+      summary: Get active cart
+      security: [{ bearerAuth: [] }]
       responses:
-        '200':
-          description: Cart detail
+        '200': { description: OK }
+    delete:
+      tags: [Cart]
+      summary: Clear active cart
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { description: OK }
+
   /cart/items:
     post:
       tags: [Cart]
       summary: Add item to cart
-      security:
-        - bearerAuth: []
+      security: [{ bearerAuth: [] }]
       requestBody:
         required: true
         content:
           application/json:
-            schema:
-              $ref: '#/components/schemas/AddCartItemRequest'
+            schema: { $ref: '#/components/schemas/AddCartItemRequest' }
       responses:
-        '200':
-          description: Updated cart
+        '200': { description: OK }
+
+  /cart/items/{id}:
+    put:
+      tags: [Cart]
+      summary: Update cart item quantity
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/UpdateCartItemRequest' }
+      responses:
+        '200': { description: OK }
+    delete:
+      tags: [Cart]
+      summary: Remove cart item
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200': { description: OK }
 
   /orders/checkout:
     post:
       tags: [Order]
-      summary: Checkout cart into order
-      security:
-        - bearerAuth: []
+      summary: Checkout active cart
+      security: [{ bearerAuth: [] }]
       requestBody:
         required: true
         content:
           application/json:
-            schema:
-              $ref: '#/components/schemas/CheckoutRequest'
+            schema: { $ref: '#/components/schemas/CheckoutRequest' }
       responses:
-        '201':
-          description: Order created
+        '201': { description: Created }
+
   /orders:
     get:
       tags: [Order]
-      summary: List customer orders
-      security:
-        - bearerAuth: []
+      summary: Customer order list
+      security: [{ bearerAuth: [] }]
       responses:
-        '200':
-          description: Orders list
-  /orders/{orderId}:
+        '200': { description: OK }
+
+  /orders/{id}:
     get:
       tags: [Order]
-      summary: Get customer order detail
-      security:
-        - bearerAuth: []
+      summary: Customer order detail
+      security: [{ bearerAuth: [] }]
       parameters:
         - in: path
-          name: orderId
+          name: id
           required: true
-          schema:
-            type: string
-            format: uuid
+          schema: { type: string, format: uuid }
       responses:
-        '200':
-          description: Order detail
+        '200': { description: OK }
 
-  /payments:
+  /payments/orders/{order_id}/pay:
     post:
       tags: [Payment]
-      summary: Create payment for order
-      security:
-        - bearerAuth: []
+      summary: Create payment for an order
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: path
+          name: order_id
+          required: true
+          schema: { type: string, format: uuid }
       responses:
-        '201':
-          description: Payment created
-  /payments/{paymentId}:
+        '201': { description: Created }
+
+  /payments/{id}/status:
     get:
       tags: [Payment]
       summary: Get payment status
-      security:
-        - bearerAuth: []
+      security: [{ bearerAuth: [] }]
       parameters:
         - in: path
-          name: paymentId
+          name: id
           required: true
-          schema:
-            type: string
-            format: uuid
+          schema: { type: string, format: uuid }
       responses:
-        '200':
-          description: Payment detail
+        '200': { description: OK }
 
-  /admin/products:
+  /webhooks/payments/midtrans:
     post:
-      tags: [Admin Product]
-      summary: Create product (admin)
-      security:
-        - bearerAuth: []
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/CreateProductRequest'
+      tags: [Webhook]
+      summary: Midtrans payment webhook
       responses:
-        '201':
-          description: Product created
+        '200': { description: OK }
 
-  /admin/orders:
-    get:
-      tags: [Admin Order]
-      summary: List all orders (admin)
-      security:
-        - bearerAuth: []
+  /webhooks/payments/xendit:
+    post:
+      tags: [Webhook]
+      summary: Xendit payment webhook
       responses:
-        '200':
-          description: Order list
-  /admin/orders/{orderId}/status:
-    patch:
-      tags: [Admin Order]
-      summary: Update order status (admin)
-      security:
-        - bearerAuth: []
-      parameters:
-        - in: path
-          name: orderId
-          required: true
-          schema:
-            type: string
-            format: uuid
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/UpdateOrderStatusRequest'
-      responses:
-        '200':
-          description: Order status updated
+        '200': { description: OK }
 
   /admin/customers:
     get:
       tags: [Admin Customer]
-      summary: List customers (admin)
-      security:
-        - bearerAuth: []
+      summary: List customers
+      security: [{ bearerAuth: [] }]
       responses:
-        '200':
-          description: Customer list
+        '200': { description: OK }
+
+  /admin/customers/{id}:
+    get:
+      tags: [Admin Customer]
+      summary: Customer detail
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200': { description: OK }
+
+  /admin/customers/{id}/orders:
+    get:
+      tags: [Admin Customer]
+      summary: Customer orders
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200': { description: OK }
+
+  /admin/categories:
+    post:
+      tags: [Admin Category]
+      summary: Create category
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/UpsertCategoryRequest' }
+      responses:
+        '201': { description: Created }
+
+  /admin/categories/{id}:
+    put:
+      tags: [Admin Category]
+      summary: Update category
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/UpsertCategoryRequest' }
+      responses:
+        '200': { description: OK }
+    delete:
+      tags: [Admin Category]
+      summary: Delete category
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200': { description: OK }
+
+  /admin/products:
+    post:
+      tags: [Admin Product]
+      summary: Create product
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/UpsertProductRequest' }
+      responses:
+        '201': { description: Created }
+
+  /admin/products/{id}:
+    put:
+      tags: [Admin Product]
+      summary: Update product
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/UpsertProductRequest' }
+      responses:
+        '200': { description: OK }
+    delete:
+      tags: [Admin Product]
+      summary: Delete product
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200': { description: OK }
+
+  /admin/products/{id}/publish:
+    patch:
+      tags: [Admin Product]
+      summary: Publish product
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200': { description: OK }
+
+  /admin/products/{id}/unpublish:
+    patch:
+      tags: [Admin Product]
+      summary: Unpublish product
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200': { description: OK }
+
+  /admin/products/{id}/stock:
+    put:
+      tags: [Admin Product]
+      summary: Update product stock
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/UpdateStockRequest' }
+      responses:
+        '200': { description: OK }
+
+  /admin/orders:
+    get:
+      tags: [Admin Order]
+      summary: List orders
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { description: OK }
+
+  /admin/orders/{id}:
+    get:
+      tags: [Admin Order]
+      summary: Order detail
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200': { description: OK }
+
+  /admin/orders/{id}/status:
+    patch:
+      tags: [Admin Order]
+      summary: Update order status
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/UpdateOrderStatusRequest' }
+      responses:
+        '200': { description: OK }
+
+  /admin/reports/orders:
+    get:
+      tags: [Admin Report]
+      summary: Orders report
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: query
+          name: date_from
+          schema: { type: string, format: date }
+        - in: query
+          name: date_to
+          schema: { type: string, format: date }
+      responses:
+        '200': { description: OK }
 
   /admin/reports/sales:
     get:
       tags: [Admin Report]
-      summary: Sales report (admin)
-      security:
-        - bearerAuth: []
+      summary: Sales report
+      security: [{ bearerAuth: [] }]
       responses:
-        '200':
-          description: Sales summary
+        '200': { description: OK }
+
+  /admin/reports/products:
+    get:
+      tags: [Admin Report]
+      summary: Product report
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { description: OK }
+
+  /admin/reports/payments:
+    get:
+      tags: [Admin Report]
+      summary: Payment report
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { description: OK }
 
   /admin/audit-logs:
     get:
       tags: [Admin Audit Log]
-      summary: List audit logs (admin)
-      security:
-        - bearerAuth: []
+      summary: Audit log list
+      security: [{ bearerAuth: [] }]
       responses:
-        '200':
-          description: Audit logs
+        '200': { description: OK }
 
-  /uploads:
+  /admin/uploads/images:
     post:
       tags: [Upload]
-      summary: Upload file (admin/customer)
-      security:
-        - bearerAuth: []
-      requestBody:
-        required: true
-        content:
-          multipart/form-data:
-            schema:
-              type: object
-              properties:
-                file:
-                  type: string
-                  format: binary
-              required: [file]
+      summary: Upload image placeholder
+      security: [{ bearerAuth: [] }]
       responses:
-        '201':
-          description: File uploaded
-
-  /webhooks/payments:
-    post:
-      tags: [Webhook]
-      summary: Payment provider webhook
-      security: []
-      parameters:
-        - in: header
-          name: X-Signature
-          required: true
-          schema:
-            type: string
-          description: HMAC signature used to validate webhook authenticity
-      responses:
-        '200':
-          description: Webhook processed
+        '200': { description: OK }
