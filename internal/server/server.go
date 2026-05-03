@@ -424,7 +424,7 @@ func registerRoutes(v1 *gin.RouterGroup, cfg config.Config, db *gorm.DB) {
 	admin.GET("/reports/orders", func(c *gin.Context) {
 		f, err := report.ParseFilter(c.Query("date_from"), c.Query("date_to"), c.Query("page"), c.Query("limit"))
 		if err != nil {
-			response.Fail(c, 400, "Validation error", "VALIDATION_ERROR", []string{"invalid date format"})
+			response.Fail(c, 400, "Validation error", "VALIDATION_ERROR", []string{"invalid date range or format (expected YYYY-MM-DD)"})
 			return
 		}
 		out, err := reportSvc.OrderReport(f)
@@ -437,7 +437,7 @@ func registerRoutes(v1 *gin.RouterGroup, cfg config.Config, db *gorm.DB) {
 	admin.GET("/reports/sales", func(c *gin.Context) {
 		f, err := report.ParseFilter(c.Query("date_from"), c.Query("date_to"), c.Query("page"), c.Query("limit"))
 		if err != nil {
-			response.Fail(c, 400, "Validation error", "VALIDATION_ERROR", []string{"invalid date format"})
+			response.Fail(c, 400, "Validation error", "VALIDATION_ERROR", []string{"invalid date range or format (expected YYYY-MM-DD)"})
 			return
 		}
 		out, err := reportSvc.SalesReport(f)
@@ -450,7 +450,7 @@ func registerRoutes(v1 *gin.RouterGroup, cfg config.Config, db *gorm.DB) {
 	admin.GET("/reports/products", func(c *gin.Context) {
 		f, err := report.ParseFilter(c.Query("date_from"), c.Query("date_to"), c.Query("page"), c.Query("limit"))
 		if err != nil {
-			response.Fail(c, 400, "Validation error", "VALIDATION_ERROR", []string{"invalid date format"})
+			response.Fail(c, 400, "Validation error", "VALIDATION_ERROR", []string{"invalid date range or format (expected YYYY-MM-DD)"})
 			return
 		}
 		items, total, err := reportSvc.ProductSalesReport(f)
@@ -463,7 +463,7 @@ func registerRoutes(v1 *gin.RouterGroup, cfg config.Config, db *gorm.DB) {
 	admin.GET("/reports/payments", func(c *gin.Context) {
 		f, err := report.ParseFilter(c.Query("date_from"), c.Query("date_to"), c.Query("page"), c.Query("limit"))
 		if err != nil {
-			response.Fail(c, 400, "Validation error", "VALIDATION_ERROR", []string{"invalid date format"})
+			response.Fail(c, 400, "Validation error", "VALIDATION_ERROR", []string{"invalid date range or format (expected YYYY-MM-DD)"})
 			return
 		}
 		out, err := reportSvc.PaymentReport(f)
@@ -476,7 +476,7 @@ func registerRoutes(v1 *gin.RouterGroup, cfg config.Config, db *gorm.DB) {
 	admin.GET("/audit-logs", func(c *gin.Context) {
 		f, err := audit.ParseFilter(c.Query("actor_type"), c.Query("action"), c.Query("resource_type"), c.Query("date_from"), c.Query("date_to"), c.Query("page"), c.Query("limit"))
 		if err != nil {
-			response.Fail(c, 400, "Validation error", "VALIDATION_ERROR", []string{"invalid date format"})
+			response.Fail(c, 400, "Validation error", "VALIDATION_ERROR", []string{"invalid date range or format (expected YYYY-MM-DD)"})
 			return
 		}
 		items, total, err := auditSvc.List(f)

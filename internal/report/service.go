@@ -1,6 +1,7 @@
 package report
 
 import (
+	"errors"
 	"time"
 
 	"github.com/google/uuid"
@@ -38,6 +39,9 @@ func ParseFilter(dateFrom, dateTo, page, limit string) (Filter, error) {
 		f.DateTo = &eod
 	}
 	f.Page, f.Limit = pagination.Parse(page, limit)
+	if f.DateFrom != nil && f.DateTo != nil && f.DateFrom.After(*f.DateTo) {
+		return f, errors.New("date_from must be before or equal to date_to")
+	}
 	return f, nil
 }
 
@@ -72,10 +76,10 @@ func (s *Service) OrderReport(f Filter) (OrderReport, error) {
 }
 
 type SalesReport struct {
-	GrossSalesAmount     int64   `json:"gross_sales_amount"`
-	PaidSalesAmount      int64   `json:"paid_sales_amount"`
-	CompletedSalesAmount int64   `json:"completed_sales_amount"`
-	AverageOrderValue    float64 `json:"average_order_value"`
+	GrossSalesAmount     int64 `json:"gross_sales_amount"`
+	PaidSalesAmount      int64 `json:"paid_sales_amount"`
+	CompletedSalesAmount int64 `json:"completed_sales_amount"`
+	AverageOrderValue    int64 `json:"average_order_value"`
 }
 
 func (s *Service) SalesReport(f Filter) (SalesReport, error) {
@@ -85,7 +89,7 @@ func (s *Service) SalesReport(f Filter) (SalesReport, error) {
 		COALESCE(SUM(total_amount), 0) as gross_sales_amount,
 		COALESCE(SUM(CASE WHEN status = 'PAID' THEN total_amount ELSE 0 END), 0) as paid_sales_amount,
 		COALESCE(SUM(CASE WHEN status = 'COMPLETED' THEN total_amount ELSE 0 END), 0) as completed_sales_amount,
-		COALESCE(AVG(total_amount), 0) as average_order_value
+		COALESCE(ROUND(AVG(total_amount), 0), 0) as average_order_value
 	`).Scan(&out).Error
 	return out, err
 }

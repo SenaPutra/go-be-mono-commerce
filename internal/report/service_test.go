@@ -2,6 +2,7 @@ package report
 
 import (
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
 	"go-be-mono-commerce/internal/database"
@@ -18,6 +19,13 @@ func setupDB(t *testing.T) *gorm.DB {
 		t.Fatal(err)
 	}
 	return db
+}
+
+func TestParseFilterDateRangeValidation(t *testing.T) {
+	_, err := ParseFilter("2026-02-01", "2026-01-01", "1", "10")
+	if err == nil {
+		t.Fatal("expected error for invalid date range")
+	}
 }
 
 func seedReportData(t *testing.T, db *gorm.DB) {
@@ -55,6 +63,9 @@ func TestReportsAggregation(t *testing.T) {
 	if sales.GrossSalesAmount != 3600 || sales.PaidSalesAmount != 200 || sales.CompletedSalesAmount != 500 {
 		t.Fatal("invalid sales report")
 	}
+	if sales.AverageOrderValue != 450 {
+		t.Fatal("invalid average order value")
+	}
 	products, _, _ := svc.ProductSalesReport(f)
 	if len(products) != 1 || products[0].TotalQuantitySold != 4 {
 		t.Fatal("invalid product report")
@@ -62,5 +73,24 @@ func TestReportsAggregation(t *testing.T) {
 	pay, _ := svc.PaymentReport(f)
 	if pay.TotalPayments != 4 || pay.TotalPaid != 1 || pay.TotalByProvider["midtrans"] != 2 {
 		t.Fatal("invalid payment report")
+	}
+}
+
+func TestReportsDateFilter(t *testing.T) {
+	db := setupDB(t)
+	seedReportData(t, db)
+	svc := NewService(db)
+
+	today := time.Now().Format("2006-01-02")
+	f, err := ParseFilter(today, today, "1", "10")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ord, err := svc.OrderReport(f)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ord.TotalOrders == 0 {
+		t.Fatal("expected records for today's date filter")
 	}
 }
