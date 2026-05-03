@@ -1,0 +1,83 @@
+{
+  "info": {
+    "name": "Go BE Mono Commerce API",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+    "description": "Postman collection for all exposed API endpoints in /api/v1."
+  },
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      {
+        "key": "token",
+        "value": "{{customer_token}}",
+        "type": "string"
+      }
+    ]
+  },
+  "item": [
+    {"name":"Health","item":[{"name":"Healthz","request":{"method":"GET","url":"{{base_url}}/healthz"}}]},
+    {"name":"Auth","item":[
+      {"name":"Customer Register","request":{"method":"POST","header":[{"key":"Content-Type","value":"application/json"}],"body":{"mode":"raw","raw":"{\n  \"name\": \"{{customer_name}}\",\n  \"email\": \"{{customer_email}}\",\n  \"password\": \"{{customer_password}}\"\n}"},"url":"{{base_url}}/api/v1/auth/customer/register"}},
+      {"name":"Customer Login","event":[{"listen":"test","script":{"exec":["const json = pm.response.json();","if (json?.data?.token) pm.environment.set('customer_token', json.data.token);"]}}],"request":{"method":"POST","header":[{"key":"Content-Type","value":"application/json"}],"body":{"mode":"raw","raw":"{\n  \"email\": \"{{customer_email}}\",\n  \"password\": \"{{customer_password}}\"\n}"},"url":"{{base_url}}/api/v1/auth/customer/login"}},
+      {"name":"Admin Login","event":[{"listen":"test","script":{"exec":["const json = pm.response.json();","if (json?.data?.token) pm.environment.set('admin_token', json.data.token);"]}}],"request":{"method":"POST","header":[{"key":"Content-Type","value":"application/json"}],"body":{"mode":"raw","raw":"{\n  \"email\": \"{{admin_email}}\",\n  \"password\": \"{{admin_password}}\"\n}"},"url":"{{base_url}}/api/v1/auth/admin/login"}},
+      {"name":"Auth Me (Customer)","request":{"method":"GET","auth":{"type":"bearer","bearer":[{"key":"token","value":"{{customer_token}}","type":"string"}]},"url":"{{base_url}}/api/v1/auth/me"}},
+      {"name":"Auth Me (Admin)","request":{"method":"GET","auth":{"type":"bearer","bearer":[{"key":"token","value":"{{admin_token}}","type":"string"}]},"url":"{{base_url}}/api/v1/auth/me"}}
+    ]},
+    {"name":"Public","item":[
+      {"name":"List Categories","request":{"method":"GET","url":"{{base_url}}/api/v1/categories"}},
+      {"name":"List Products","request":{"method":"GET","url":"{{base_url}}/api/v1/products?page=1&limit=10&q={{search_query}}"}},
+      {"name":"Product Detail By Slug","request":{"method":"GET","url":"{{base_url}}/api/v1/products/{{product_slug}}"}}
+    ]},
+    {"name":"Customer","auth":{"type":"bearer","bearer":[{"key":"token","value":"{{customer_token}}","type":"string"}]},"item":[
+      {"name":"Get Profile","request":{"method":"GET","url":"{{base_url}}/api/v1/customers/me"}},
+      {"name":"Update Profile","request":{"method":"PUT","header":[{"key":"Content-Type","value":"application/json"}],"body":{"mode":"raw","raw":"{\n  \"name\": \"Updated {{customer_name}}\",\n  \"phone\": \"+628123456789\"\n}"},"url":"{{base_url}}/api/v1/customers/me"}},
+      {"name":"List Addresses","request":{"method":"GET","url":"{{base_url}}/api/v1/customers/me/addresses"}},
+      {"name":"Create Address","request":{"method":"POST","header":[{"key":"Content-Type","value":"application/json"}],"body":{"mode":"raw","raw":"{\n  \"label\": \"Home\",\n  \"receiver_name\": \"{{customer_name}}\",\n  \"phone\": \"+628123456789\",\n  \"address\": \"Street 1\",\n  \"city\": \"Jakarta\",\n  \"province\": \"DKI Jakarta\",\n  \"postal_code\": \"12345\",\n  \"is_default\": true\n}"},"url":"{{base_url}}/api/v1/customers/me/addresses"}},
+      {"name":"Update Address","request":{"method":"PUT","header":[{"key":"Content-Type","value":"application/json"}],"body":{"mode":"raw","raw":"{\n  \"label\": \"Office\",\n  \"receiver_name\": \"{{customer_name}}\",\n  \"phone\": \"+628123456780\",\n  \"address\": \"Street 99\",\n  \"city\": \"Bandung\",\n  \"province\": \"Jawa Barat\",\n  \"postal_code\": \"40111\",\n  \"is_default\": false\n}"},"url":"{{base_url}}/api/v1/customers/me/addresses/{{address_id}}"}},
+      {"name":"Delete Address","request":{"method":"DELETE","url":"{{base_url}}/api/v1/customers/me/addresses/{{address_id}}"}},
+      {"name":"Customer Order History","request":{"method":"GET","url":"{{base_url}}/api/v1/customers/me/orders"}},
+      {"name":"Customer Order Detail","request":{"method":"GET","url":"{{base_url}}/api/v1/customers/me/orders/{{order_id}}"}}
+    ]},
+    {"name":"Cart","auth":{"type":"bearer","bearer":[{"key":"token","value":"{{customer_token}}","type":"string"}]},"item":[
+      {"name":"Get Cart","request":{"method":"GET","url":"{{base_url}}/api/v1/cart"}},
+      {"name":"Add Cart Item","request":{"method":"POST","header":[{"key":"Content-Type","value":"application/json"}],"body":{"mode":"raw","raw":"{\n  \"product_id\": \"{{product_id}}\",\n  \"quantity\": 1\n}"},"url":"{{base_url}}/api/v1/cart/items"}},
+      {"name":"Update Cart Item","request":{"method":"PUT","header":[{"key":"Content-Type","value":"application/json"}],"body":{"mode":"raw","raw":"{\n  \"quantity\": 2\n}"},"url":"{{base_url}}/api/v1/cart/items/{{cart_item_id}}"}},
+      {"name":"Delete Cart Item","request":{"method":"DELETE","url":"{{base_url}}/api/v1/cart/items/{{cart_item_id}}"}},
+      {"name":"Clear Cart","request":{"method":"DELETE","url":"{{base_url}}/api/v1/cart"}}
+    ]},
+    {"name":"Orders","auth":{"type":"bearer","bearer":[{"key":"token","value":"{{customer_token}}","type":"string"}]},"item":[
+      {"name":"Checkout","request":{"method":"POST","header":[{"key":"Content-Type","value":"application/json"}],"body":{"mode":"raw","raw":"{\n  \"address_id\": \"{{address_id}}\"\n}"},"url":"{{base_url}}/api/v1/orders/checkout"}},
+      {"name":"List My Orders","request":{"method":"GET","url":"{{base_url}}/api/v1/orders"}},
+      {"name":"Get My Order","request":{"method":"GET","url":"{{base_url}}/api/v1/orders/{{order_id}}"}}
+    ]},
+    {"name":"Payments","item":[
+      {"name":"Create Payment","request":{"method":"POST","auth":{"type":"bearer","bearer":[{"key":"token","value":"{{customer_token}}","type":"string"}]},"url":"{{base_url}}/api/v1/payments/orders/{{order_id}}/pay"}},
+      {"name":"Payment Status","request":{"method":"GET","auth":{"type":"bearer","bearer":[{"key":"token","value":"{{customer_token}}","type":"string"}]},"url":"{{base_url}}/api/v1/payments/{{payment_id}}/status"}},
+      {"name":"Midtrans Webhook","request":{"method":"POST","header":[{"key":"Content-Type","value":"application/json"}],"body":{"mode":"raw","raw":"{\n  \"order_id\": \"{{order_number}}\",\n  \"transaction_status\": \"settlement\",\n  \"fraud_status\": \"accept\",\n  \"signature_key\": \"dummy-signature\"\n}"},"url":"{{base_url}}/api/v1/webhooks/payments/midtrans"}},
+      {"name":"Xendit Webhook","request":{"method":"POST","header":[{"key":"Content-Type","value":"application/json"}],"body":{"mode":"raw","raw":"{\n  \"external_id\": \"{{order_number}}\",\n  \"status\": \"PAID\",\n  \"id\": \"{{provider_reference}}\"\n}"},"url":"{{base_url}}/api/v1/webhooks/payments/xendit"}}
+    ]},
+    {"name":"Admin","auth":{"type":"bearer","bearer":[{"key":"token","value":"{{admin_token}}","type":"string"}]},"item":[
+      {"name":"Create Category","request":{"method":"POST","header":[{"key":"Content-Type","value":"application/json"}],"body":{"mode":"raw","raw":"{\n  \"name\": \"Electronics\",\n  \"slug\": \"electronics\",\n  \"description\": \"Electronic products\"\n}"},"url":"{{base_url}}/api/v1/admin/categories"}},
+      {"name":"Update Category","request":{"method":"PUT","header":[{"key":"Content-Type","value":"application/json"}],"body":{"mode":"raw","raw":"{\n  \"name\": \"Electronics Updated\",\n  \"slug\": \"electronics\",\n  \"description\": \"Updated\"\n}"},"url":"{{base_url}}/api/v1/admin/categories/{{category_id}}"}},
+      {"name":"Delete Category","request":{"method":"DELETE","url":"{{base_url}}/api/v1/admin/categories/{{category_id}}"}},
+      {"name":"Create Product","request":{"method":"POST","header":[{"key":"Content-Type","value":"application/json"}],"body":{"mode":"raw","raw":"{\n  \"name\": \"Laptop Pro\",\n  \"slug\": \"laptop-pro\",\n  \"description\": \"Powerful laptop\",\n  \"price\": 19990000,\n  \"stock\": 10,\n  \"category_id\": \"{{category_id}}\",\n  \"image_url\": \"https://example.com/laptop.jpg\",\n  \"is_active\": true\n}"},"url":"{{base_url}}/api/v1/admin/products"}},
+      {"name":"Update Product","request":{"method":"PUT","header":[{"key":"Content-Type","value":"application/json"}],"body":{"mode":"raw","raw":"{\n  \"name\": \"Laptop Pro 2026\",\n  \"slug\": \"laptop-pro\",\n  \"description\": \"Updated description\",\n  \"price\": 18990000,\n  \"stock\": 15,\n  \"category_id\": \"{{category_id}}\",\n  \"image_url\": \"https://example.com/laptop-new.jpg\",\n  \"is_active\": true\n}"},"url":"{{base_url}}/api/v1/admin/products/{{product_id}}"}},
+      {"name":"Delete Product","request":{"method":"DELETE","url":"{{base_url}}/api/v1/admin/products/{{product_id}}"}},
+      {"name":"Publish Product","request":{"method":"PATCH","url":"{{base_url}}/api/v1/admin/products/{{product_id}}/publish"}},
+      {"name":"Unpublish Product","request":{"method":"PATCH","url":"{{base_url}}/api/v1/admin/products/{{product_id}}/unpublish"}},
+      {"name":"Update Product Stock","request":{"method":"PUT","header":[{"key":"Content-Type","value":"application/json"}],"body":{"mode":"raw","raw":"{\n  \"stock\": 99\n}"},"url":"{{base_url}}/api/v1/admin/products/{{product_id}}/stock"}},
+      {"name":"Admin List Orders","request":{"method":"GET","url":"{{base_url}}/api/v1/admin/orders"}},
+      {"name":"Admin Order Detail","request":{"method":"GET","url":"{{base_url}}/api/v1/admin/orders/{{order_id}}"}},
+      {"name":"Admin Update Order Status","request":{"method":"PATCH","header":[{"key":"Content-Type","value":"application/json"}],"body":{"mode":"raw","raw":"{\n  \"status\": \"PROCESSING\"\n}"},"url":"{{base_url}}/api/v1/admin/orders/{{order_id}}/status"}},
+      {"name":"Admin List Customers","request":{"method":"GET","url":"{{base_url}}/api/v1/admin/customers"}},
+      {"name":"Admin Customer Detail","request":{"method":"GET","url":"{{base_url}}/api/v1/admin/customers/{{customer_id}}"}},
+      {"name":"Admin Customer Orders","request":{"method":"GET","url":"{{base_url}}/api/v1/admin/customers/{{customer_id}}/orders"}},
+      {"name":"Orders Report","request":{"method":"GET","url":"{{base_url}}/api/v1/admin/reports/orders?date_from={{date_from}}&date_to={{date_to}}&page=1&limit=10"}},
+      {"name":"Sales Report","request":{"method":"GET","url":"{{base_url}}/api/v1/admin/reports/sales?date_from={{date_from}}&date_to={{date_to}}&page=1&limit=10"}},
+      {"name":"Products Report","request":{"method":"GET","url":"{{base_url}}/api/v1/admin/reports/products?date_from={{date_from}}&date_to={{date_to}}&page=1&limit=10"}},
+      {"name":"Payments Report","request":{"method":"GET","url":"{{base_url}}/api/v1/admin/reports/payments?date_from={{date_from}}&date_to={{date_to}}&page=1&limit=10"}},
+      {"name":"Audit Logs","request":{"method":"GET","url":"{{base_url}}/api/v1/admin/audit-logs?actor_type=&action=&resource_type=&date_from={{date_from}}&date_to={{date_to}}&page=1&limit=10"}},
+      {"name":"Upload Image (Placeholder)","request":{"method":"POST","url":"{{base_url}}/api/v1/admin/uploads/images"}}
+    ]}
+  ]
+}
