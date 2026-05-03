@@ -45,6 +45,9 @@ func TestCheckoutSuccess(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	if o.Status != StatusPendingPayment {
+		t.Fatalf("expected status %s, got %s", StatusPendingPayment, o.Status)
+	}
 	var items []database.OrderItem
 	_ = db.Where("order_id = ?", o.ID).Find(&items).Error
 	if len(items) != 2 {
@@ -54,6 +57,30 @@ func TestCheckoutSuccess(t *testing.T) {
 	_ = db.First(&p, "id = ?", p1.ID).Error
 	if p.Stock != 8 {
 		t.Fatalf("stock not reduced")
+	}
+	var cart database.Cart
+	_ = db.Where("customer_id = ?", cust).First(&cart).Error
+	if cart.Status != "CHECKED_OUT" {
+		t.Fatalf("expected checked out cart")
+	}
+}
+
+func TestCheckoutEmptyCart(t *testing.T) {
+	db := testDB(t)
+	svc := NewService(db)
+	cust := uuid.New()
+	addr := database.CustomerAddress{CustomerID: cust, ReceiverName: "A", Address: "J", City: "C", Province: "P", PostalCode: "1"}
+	_ = db.Create(&addr).Error
+	cart := database.Cart{CustomerID: cust, Status: "ACTIVE"}
+	_ = db.Create(&cart).Error
+
+	if _, err := svc.Checkout(cust, CheckoutRequest{AddressID: addr.ID.String()}); err == nil {
+		t.Fatal("expected empty cart error")
+	}
+	var orderCount int64
+	_ = db.Model(&database.Order{}).Count(&orderCount).Error
+	if orderCount != 0 {
+		t.Fatalf("expected no order created, got %d", orderCount)
 	}
 }
 
