@@ -341,6 +341,52 @@ echo "$CHECKOUT_RESPONSE" | jq
 export ORDER_ID=$(echo "$CHECKOUT_RESPONSE" | jq -r '.data.id')
 ```
 
+
+### 10.10.a Customer profile and address book
+
+Get customer profile:
+
+```bash
+curl -s -X GET "$API_V1/customers/me" \
+  -H "Authorization: Bearer $CUSTOMER_TOKEN" | jq
+```
+
+Update customer profile:
+
+```bash
+curl -s -X PUT "$API_V1/customers/me" \
+  -H "Authorization: Bearer $CUSTOMER_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "Sena Putra",
+    "phone": "08123456789"
+  }' | jq
+```
+
+List my addresses:
+
+```bash
+curl -s -X GET "$API_V1/customers/me/addresses" \
+  -H "Authorization: Bearer $CUSTOMER_TOKEN" | jq
+```
+
+Update address:
+
+```bash
+curl -s -X PUT "$API_V1/customers/me/addresses/$ADDRESS_ID" \
+  -H "Authorization: Bearer $CUSTOMER_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "receiver_name": "Sena",
+    "phone": "08123456789",
+    "address": "Jl. Example No. 1",
+    "city": "Jakarta",
+    "province": "DKI Jakarta",
+    "postal_code": "10110",
+    "is_default": true
+  }' | jq
+```
+
 ### 10.11 Create payment
 
 ```bash
@@ -378,6 +424,20 @@ curl -s -X GET "$API_V1/orders/$ORDER_ID" \
 
 ```bash
 curl -s -X GET "$API_V1/admin/orders/$ORDER_ID" \
+  -H "Authorization: Bearer $ADMIN_TOKEN" | jq
+```
+
+
+### 10.16 Admin customer visibility
+
+```bash
+curl -s "$API_V1/admin/customers" \
+  -H "Authorization: Bearer $ADMIN_TOKEN" | jq
+
+curl -s "$API_V1/admin/customers/$CUSTOMER_ID" \
+  -H "Authorization: Bearer $ADMIN_TOKEN" | jq
+
+curl -s "$API_V1/admin/customers/$CUSTOMER_ID/orders" \
   -H "Authorization: Bearer $ADMIN_TOKEN" | jq
 ```
 
